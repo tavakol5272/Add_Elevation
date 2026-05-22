@@ -1,31 +1,86 @@
 {
+  "version": "1.2",
   "settings": [
     {
-      "id": "adapt_alt",
-      "name": "Adapt altitude - i.e. calulate height above ground",
-      "description": "Select if you want to add an adapted altitude variable to your data. This will technically calculate height above ground (by subtracting the altitude of the animal (derived from the tag) from the ground elevation.). The algorithm will detect your altitude variable by the names partly being 'height' or 'altitude'. The adapted variable will be called as the original one with '.adapted' added to the name. In addition, output histogrammes with individual adapted altitude distributions and a table with mean and standard deviation adapted altitude per individual and overall will be generated. If you provide timelag (use Timelag Between Locations App before this App), gap adapted statistics are added.",
-      "defaultValue": false,
-      "type": "CHECKBOX"
+  "id": "height_attr_list",
+  "name": "Choose the height/altitude attribute to calculate height above ground",
+  "description": "Select one standard Movebank height/altitude attribute. If the correct attribute is not listed, select 'other' and enter the exact column name in the text field below.",
+  "type": "DROPDOWN",
+  "defaultValue": "no_selection",
+  "options": [{
+      "value": "no_selection",
+      "displayText": "no selection"
     },
-	{
-      "id": "ellipsoid",
-      "name": "Adapt for height above ellipsoid",
-      "description": "Select if your tracks contain height above ellipsoid measurements. Then the adapted altitude (height above ground) for all locations will also include an addition of local geoid height. For geoid height, 1 degree EGM2008 model values are used (see https://www.agisoft.com/downloads/geoids/).",
-      "defaultValue": false,
-      "type": "CHECKBOX"
+    {
+      "value": "height_above_ellipsoid",
+      "displayText": "height_above_ellipsoid"
     },
+    {
+      "value": "height_above_msl_or_mean_sea_level",
+      "displayText": "height_above_mean_sea_level/msl"
+    },
+    {
+      "value": "height_above_ground_level",
+      "displayText": "height_above_ground_level"
+    },
+    {
+      "value": "barometric_height",
+      "displayText": "barometric_height"
+    },
+    {
+      "value": "height_raw",
+      "displayText": "height_raw"
+    },
+    {
+      "value": "other",
+      "displayText": "other / custom column name"
+    }
+    ]
+ },
+ {
+  "id": "height_attr_freetext",
+  "name": "OR provide column name of custom height/altitude attribute in the data set if not present in the selection above.",
+  "description": "Use this only if you selected 'other'. This tells the app how the custom height column should be interpreted.",
+  "defaultValue": null,
+  "type": "STRING"
+	},
 	{
+  "id": "height_type_freetext",
+  "name": "Type of the custom height/altitude attribute",
+  "description": "Use this only if you selected 'other'. This tells the app how the custom height column should be interpreted.",
+  "type": "DROPDOWN",
+  "defaultValue": "unknown",
+  "options": [
+    {
+      "value": "unknown",
+      "displayText": "unknown / do not adapt"
+    },
+    {
+      "value": "msl",
+      "displayText": "height above mean sea level"
+    },
+    {
+      "value": "ellipsoid",
+      "displayText": "height above ellipsoid"
+    },
+    {
+      "value": "ground_level",
+      "displayText": "height above ground level"
+    }
+  ]
+ },
+ {
       "id": "height_props",
       "name": "Height thresholds for proportional use",
       "description": "Insert the required adapted heights/altitudes (in metre) for which the usage proportions shall be calculated. Values must be positive. If you want more than one height, enter them in ascending order and seperate by comma. Example: 100,200,300,500. Defaults to NULL (no proportions calculated, histogram breaks regular).",
       "defaultValue": null,
       "type": "STRING"
-    },
+    }
   ],
   "providedAppFiles": [
     {
       "settingId": "egm_file",
-      "from": "data/local_app_files/provided-app-files/egm_file/"
+      "from": "data/auxiliary/user-files/provided-app-files/egm_file/"
     }
   ],
   "dependencies": {
@@ -79,8 +134,5 @@
       "affiliation": "Max-Planck-Institute of Animal Behavior",
       "affiliationRor": "https://ror.org/026stee22"
     }
-  ],
-  "documentation": {
-    "url": "https://github.com/movestore/Add_Elevation/blob/main/README.md"
-  }
+  ]
 }

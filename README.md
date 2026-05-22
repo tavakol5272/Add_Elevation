@@ -1,51 +1,77 @@
-# Add Elevation and Height Above Ground
+# Name of App *(Give your app a short and informative title. Please adhere to our convention of Title Case without hyphens (e.g. My New App))*
 
 MoveApps
 
-Github repository: *github.com/movestore/Add_Elevation*
+Github repository: *github.com/yourAccount/Name-of-App* *(provide the link to the repository where the code of the App can be found)*
 
 ## Description
-This App annotates all locations with ground elevation (DEM, 30m resolution) and optionally provides corrected height/altitude values and histograms/stats thereof. Height above ellipsoid can additionally be adapted by geoid height (EGM2008). (R package `elevatr`)
+*Enter here the short description of the App that might also be used when filling out the description during App submission to MoveApps. This text is directly presented to Users that look through the list of Apps when compiling Workflows.*
 
 ## Documentation
-Using the R package `elevatr`, this App appends a ground elevation estimate (DEM) to each location of the data set. We have selected to use DEM from the Amazon Web Services Terrain Tiles at a resolution of 30 m, which is available globally.
+*Enter here a detailed description of your App. What is it intended to be used for. Which steps of analyses are performed and how. Please be explicit about any detail that is important for use and understanding of the App and its outcomes. You might also refer to the sections below.*
 
-In case the `adapt_alt` parameter is set to TRUE, the algorithm detects altitude/height measures in your data (by the phrases `height` or `altitude`) and adapts it by subtracting the DEM estimate from it, i.e. transforming a height above mean sea level to height above ground. It then generates a table of mean and standard deviation (sd) individual adapted altitudes/heights and histograms as well as duration adapted mean and sd individual adapted values. Please note that height measurements of any tracking devices have rather large errors.
+### Application scope
+#### Generality of App usability
+*State here if the App was developed for a specific species, taxon or taxonomic group, or to answer a specific question. How might it influence the scope and utility of the App. This information will help the user to understand why the App might be producing no or odd results.*
 
-If your data contain height above ellispoid, please select the setting `Adapt for height above ellipsoid`. Then your adapted altitude will additioanlly be adapted with a modelled geoid height (i.e. added to it) at each location, to get the true height of your animal. Geoid height is a complex value that differs by region, but has been obtained in 1 arc-minute resolution from the [Earth Gravitational Model 2008 (EGM2008)](https://earth-info.nga.mil/index.php?dir=wgs84&action=wgs84#tab_egm2008). 
+*Examples:*
 
-Ground elevation, EGM2008 geoid height as well as the adapted height/altitude measure are appended to the input data set and passed on to the next App. Thus, they can be used as attribute parameters there. Furthermore, they can be written as part of the data set to output files if using the rds 2 csv, Write Shapefile, Write GPX or similar Apps.
+This App was developed using data of birds. 
 
-It is necessary to include the Time Lag Between Locations App before this App in the workflow.
+This App was developed using data of red deer. 
 
-### Input data
-move2_location object
+This App was developed for any taxonomic group. 
 
-### Output data
-move2_location object
+This App was developed to identify kill sites, but can probably be used to identify any kind of location clusters like nests, dens or drinking holes.
+
+#### Required data properties
+*State here the required and/or optimal data properties for this App to perform properly.*
+
+*Examples:*
+
+This App is only applicable to data that reflect range resident behavior. 
+
+The data should have a fix rate of at least 1 location per 30 minutes. 
+
+The App should work for any kind of (location) data.
+
+### Input type
+*Indicate which type of input data the App requires.*
+
+*Example*: `move2::move2_loc`
+
+### Output type
+*Indicate which type of output data the App produces to be passed on to subsequent Apps.*
+
+*Example:* `move2::move2_loc`
 
 ### Artefacts
-`Altitude.adapted.stats.csv`:  table of number of locations, mean and standard deviation adapted height/altitude and (by duration) weighted mean and standard deviation. Values are given per track and overall. (only available if `adapt_alt` is TRUE).
+*If the App creates artefacts (e.g. csv, pdf, jpeg, shapefiles, etc), please list them here and describe each.*
 
-`Histograms_height.above.ellipsoid.adapted.pdf`: histogrammes of altitude/height distribution for each track and overall. If `height_props` are given, the breaks of the histograms are aligned to them, else equidistant (only available if `adapt_alt` is TRUE).
-
-`Thr_prop_adap_Altitude.csv`: table of proportions of locations and durations for each height threshold and track. For each threshold, an average and standard deviation value are given, in addition. (only available if `adapt_alt` is TRUE).
+*Example:* `rest_overview.csv`: csv-file with Table of all rest site properties
 
 ### Settings 
-**Adapt altitude (`adapt_alt`):** Select if you want to add a DEM adapted height variable as an additional attribute. Default FALSE. See details above.
+*Please list and define all settings/parameters that the App requires to be set by the App user, if necessary including their unit. Please first state the Setting name the user encounters in the Settings menu defined in the appspecs.json, and between brackets the argument used in the R function to be able to identify it quickly in the code if needed.*
 
-**Adapt for height above ellipsoid (`ellipsoid`):** Select if your tracks contain height above ellipsoid measurements. Then the adapted altitude for all locations will also include an addition of local geoid height. Default FALSE.
+*Example:* `Radius of resting site` (radius): Defined radius the animal has to stay in for a given duration of time for it to be considered resting site. Unit: `metres`.
 
-**Height thresholds for proportional use (`height_props`):** One or more height thresholds (in metre) that you want proportional use calculated for. For multiple values please separate by comma. Default NULL (then no proportional use is calculated).
+### Changes in output data
+*Specify here how and if the App modifies the input data. Describe clearly what e.g. each additional column means.*
 
-### Null or error handling:
-**Adapt altitude (`adapt_alt`):** If TRUE, problems can occur if the name of the altitude variable does not contain the phrases 'height' or 'altitude'.
+*Examples:*
 
-**Adapt for height above ellipsoid (`ellipsoid`):** If your tracks are mixes of height above ellipsoid and height above mean sea level, it is not possible to select adaptation of part of the data only. Then, please split your workflow into two workflow instances.
+The App adds to the input data the columns `Max_dist` and `Avg_dist`. They contain the maximum distance to the provided focal location and the average distance to it over all locations. 
 
-**Height thresholds for proportional use (`height_props`):** If NULL (default), no proportional use is calculated and the histogram breaks become equidistant.
+The App filterers the input data as selected by the user. 
 
-**Data:** The input data set is returned with one or two additional attributes. Should not lead to errors. 
+The output data is the outcome of the model applied to the input data. 
 
+The input data remains unchanged.
 
+### Most common errors
+*Please describe shortly what most common errors of the App can be, how they occur and best ways of solving them.*
 
+### Null or error handling
+*Please indicate for each setting as well as the input data which behaviour the App is supposed to show in case of errors or NULL values/input. Please also add notes of possible errors that can happen if settings/parameters are improperly set and any other important information that you find the user should be aware of.*
+
+*Example:* **Setting `radius`:** If no radius AND no duration are given, the input data set is returned with a warning. If no radius is given (NULL), but a duration is defined then a default radius of 1000m = 1km is set. 

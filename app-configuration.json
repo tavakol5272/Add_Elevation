@@ -1,5 +1,4 @@
 {
-    "adapt_alt": true,
-    "height_props": null,
-    "ellipsoid": false
+    "sdk": "MoveApps R SDK",
+    "year": 2014
 }

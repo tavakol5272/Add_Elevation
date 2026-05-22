@@ -3,7 +3,8 @@
 .RData
 .Ruserdata
 .DS_Store
+.idea/
 data/output/**
 !data/output/.keep
-old_files_move1
-us_nga_egm2008_1.tif
+tests/testthat/plot.png
+data/auxiliary/user-files/provided-app-files/**

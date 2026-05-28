@@ -1,4 +1,6 @@
 {
-    "sdk": "MoveApps R SDK",
-    "year": 2014
+  "height_attr_list": "height_above_ellipsoid",
+  "height_attr_freetext": null,
+  "height_type_freetext": "unknown",
+  "height_props": null
 }

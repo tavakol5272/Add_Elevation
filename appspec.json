@@ -96,6 +96,9 @@
       },
 	  {
         "name": "terra"
+      },
+	  {
+        "name": "ggplot2"
       }
     ]
   },

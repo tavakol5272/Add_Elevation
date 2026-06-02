@@ -1,12 +1,10 @@
-library('move2')
-library('sf')
-library('elevatr')
-library('terra')
-
+library(move2)
+library(sf)
+library(elevatr)
+library(terra)
+library(ggplot2)
 
 rFunction <- function(data, height_attr_list, height_attr_freetext, height_type_freetext, height_props = NULL, ...) {
-  
-  #input_data <- data
   
   if (is.null(data) || nrow(data) == 0) {
     logger.info("Input is NULL or has 0 rows — returning NULL.")
@@ -175,6 +173,9 @@ rFunction <- function(data, height_attr_list, height_attr_freetext, height_type_
   }
 ############################################################################
   #########  artefact/statistics part
+  
+  data$timelag <- as.numeric(move2::mt_time_lags(data, units = "secs"))
+  
   data.split <- split(data, mt_track_id(data))
   ids <- names(data.split)
   n <- length(ids)
@@ -199,23 +200,17 @@ rFunction <- function(data, height_attr_list, height_attr_freetext, height_type_
     height_stats$mean.pts.height.above.ground[i] <- mean(height_above_ground_i, na.rm = TRUE)
     height_stats$sd.pts.height.above.ground[i] <- sd(height_above_ground_i, na.rm = TRUE)
     
-    if ("timelag" %in% names(datai)) {
+    dur_i <- as.numeric(datai$timelag)
+    ok <- !is.na(height_above_ground_i) & !is.na(dur_i)
+    
+    if (sum(dur_i[ok], na.rm = TRUE) > 0) {
+      mu_i <- sum(height_above_ground_i[ok] * dur_i[ok], na.rm = TRUE) /
+        sum(dur_i[ok], na.rm = TRUE)
       
-      dur_i <- as.numeric(datai$timelag)
-      ok <- !is.na(height_above_ground_i) & !is.na(dur_i)
-      
-      if (sum(dur_i[ok], na.rm = TRUE) > 0) {
-        mu_i <- sum(height_above_ground_i[ok] * dur_i[ok], na.rm = TRUE) / sum(dur_i[ok], na.rm = TRUE)
-        
-        height_stats$mean.dur.height.above.ground[i] <- mu_i
-        height_stats$sd.dur.height.above.ground[i] <-
-          sqrt(sum((height_above_ground_i[ok] - mu_i)^2 * dur_i[ok], na.rm = TRUE) / sum(dur_i[ok], na.rm = TRUE))
-      }
-      
-    } else {
-      #ask about this:   data$timelag <- mt_time_lags(data, units)
-      height_stats$mean.dur.height.above.ground[i] <- NA
-      height_stats$sd.dur.height.above.ground[i] <- NA
+      height_stats$mean.dur.height.above.ground[i] <- mu_i
+      height_stats$sd.dur.height.above.ground[i] <-
+        sqrt(sum((height_above_ground_i[ok] - mu_i)^2 * dur_i[ok], na.rm = TRUE) /
+               sum(dur_i[ok], na.rm = TRUE))
     }
   }
   
@@ -226,21 +221,17 @@ rFunction <- function(data, height_attr_list, height_attr_freetext, height_type_
   height_stats$mean.pts.height.above.ground[last_row] <- mean(height_all, na.rm = TRUE)
   height_stats$sd.pts.height.above.ground[last_row] <- sd(height_all, na.rm = TRUE)
   
-  if ("timelag" %in% names(data)) {
-    dur_all <- as.numeric(data$timelag)
-    ok <- !is.na(height_all) & !is.na(dur_all)
+  dur_all <- as.numeric(data$timelag)
+  ok <- !is.na(height_all) & !is.na(dur_all)
+  
+  if (sum(dur_all[ok], na.rm = TRUE) > 0) {
+    mu_all <- sum(height_all[ok] * dur_all[ok], na.rm = TRUE) /
+      sum(dur_all[ok], na.rm = TRUE)
     
-    if (sum(dur_all[ok], na.rm = TRUE) > 0) {
-      mu_all <- sum(height_all[ok] * dur_all[ok], na.rm = TRUE) / sum(dur_all[ok], na.rm = TRUE)
-      
-      height_stats$mean.dur.height.above.ground[last_row] <- mu_all
-      height_stats$sd.dur.height.above.ground[last_row] <-
-        sqrt(sum((height_all[ok] - mu_all)^2 * dur_all[ok], na.rm = TRUE) / sum(dur_all[ok], na.rm = TRUE))
-    }
-  } else {
-    #ask about this:   data$timelag <- mt_time_lags(data, units)
-    height_stats$mean.dur.height.above.ground[last_row] <- NA
-    height_stats$sd.dur.height.above.ground[last_row] <- NA
+    height_stats$mean.dur.height.above.ground[last_row] <- mu_all
+    height_stats$sd.dur.height.above.ground[last_row] <-
+      sqrt(sum((height_all[ok] - mu_all)^2 * dur_all[ok], na.rm = TRUE) /
+             sum(dur_all[ok], na.rm = TRUE))
   }
   
   
@@ -251,22 +242,24 @@ rFunction <- function(data, height_attr_list, height_attr_freetext, height_type_
   
   if ("height_above_ground" %in% names(data)) {
     
-    
-    # helper function for one histogram
     plot_height_hist <- function(x, title) {
       x <- as.numeric(x)
       x <- x[!is.na(x)]
       
       if (length(x) == 0) {
-        logger.info(paste0("No height_above_ground values for ", title))
+        if (exists("logger")) {
+          logger.info(paste0("No height_above_ground values for ", title))
+        } else {
+          message(paste0("No height_above_ground values for ", title))
+        }
         return(NULL)
       }
       
-      xlim_vals <- as.numeric(quantile(x, probs = c(0.01, 0.99), na.rm = TRUE))
       
-      if (!all(is.finite(xlim_vals)) || xlim_vals[1] == xlim_vals[2]) {
-        xlim_vals <- range(x, na.rm = TRUE)
-      }
+      df <- data.frame(height = x)
+      
+      # Breaks
+      brks <- NULL
       
       if (
         !is.null(height_props) &&
@@ -274,34 +267,51 @@ rFunction <- function(data, height_attr_list, height_attr_freetext, height_type_
         length(height_props) > 0 &&
         trimws(as.character(height_props)) != ""
       ) {
-        
         hei_props <- sort(as.numeric(trimws(strsplit(as.character(height_props), ",")[[1]])))
-        brks <- sort(unique(c(min(x), 0, hei_props, max(x))))
+        calculated_brks <- sort(unique(c(min(x), 0, hei_props, max(x))))
         
-        if (length(brks) >= 2) {
-          hist(x,breaks = brks, main = title, xlab = "height_above_ground", freq = FALSE, xlim = xlim_vals)
-        } else {
-          hist( x,main = title,xlab = "height_above_ground",freq = FALSE, xlim = xlim_vals)
+        if (length(calculated_brks) >= 2) {
+          brks <- calculated_brks
         }
-        
-      } else {
-        
-        hist( x,main = title, xlab = "height_above_ground", freq = FALSE, xlim = xlim_vals)
       }
       
-      abline(v = 0, lty = 2)
+      # Histogram
+      if (!is.null(brks)) {
+        hist_geom <- geom_histogram(
+          aes(y = after_stat(density) * ifelse(after_stat(x) < 0, -1, 1)), 
+          breaks = brks, color = "black", fill = "skyblue"
+        )
+      } else {
+        hist_geom <- geom_histogram(
+          aes(y = after_stat(density) * ifelse(after_stat(x) < 0, -1, 1)), 
+          bins = 50, color = "black", fill = "skyblue"
+        )
+      }
+      
+      # ggplot Object
+      p <- ggplot(df, aes(x = height)) +
+        hist_geom +
+        geom_hline(yintercept = 0, color = "black") +
+        geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
+        scale_y_continuous(labels = abs) +
+        labs(title = title, x = "height_above_ground", y = "Density") +
+        theme_minimal()
+      
+      print(p)
+      return(p)
     }
     
     pdf(appArtifactPath("height_above_ground_histograms.pdf"), width = 12, height = 8)
+    
+    
+    # all tracks
+    plot_height_hist(data$height_above_ground, "Histogram of all tracks")
     
     # per track
     lapply(names(data.split), function(id) {
       plot_height_hist(data.split[[id]]$height_above_ground,
                        paste("Histogram of", id))
     })
-    
-    # all tracks
-    plot_height_hist(data$height_above_ground, "Histogram of all tracks")
     
     dev.off()
     
@@ -340,11 +350,7 @@ rFunction <- function(data, height_attr_list, height_attr_freetext, height_type_
         datai <- data.split[[id]]
         height_i <- as.numeric(datai$height_above_ground)
         
-        if ("timelag" %in% names(datai)) {
-          dur_i <- as.numeric(datai$timelag)
-        } else {
-          dur_i <- rep(NA, length(height_i))
-        }
+        dur_i <- as.numeric(datai$timelag)
         
         for (thr in height_thresholds) {
           
@@ -360,8 +366,9 @@ rFunction <- function(data, height_attr_list, height_attr_freetext, height_type_
           }
           
           
-          if ("timelag" %in% names(datai) && sum(dur_i[valid_height], na.rm = TRUE) > 0) {
-            prop_dur <- sum(dur_i[below_thr], na.rm = TRUE) / sum(dur_i[valid_height], na.rm = TRUE)
+          if (sum(dur_i[valid_height], na.rm = TRUE) > 0) {
+            prop_dur <- sum(dur_i[below_thr], na.rm = TRUE) / 
+              sum(dur_i[valid_height], na.rm = TRUE)
           } else {
             prop_dur <- NA
           }
@@ -399,7 +406,7 @@ rFunction <- function(data, height_attr_list, height_attr_freetext, height_type_
   
   
   return(data)
-  #return(input_data)
+  
 } 
 
 

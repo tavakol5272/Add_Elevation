@@ -174,9 +174,11 @@ rFunction <- function(data, height_attr_list, height_attr_freetext, height_type_
 ############################################################################
   #########  artefact/statistics part
   
-  data$timelag <- as.numeric(move2::mt_time_lags(data, units = "secs"))
+  timelag <- as.numeric(move2::mt_time_lags(data, units = "secs"))
   
   data.split <- split(data, mt_track_id(data))
+  timelag.split <- split(timelag, mt_track_id(data))
+  
   ids <- names(data.split)
   n <- length(ids)
   
@@ -200,7 +202,7 @@ rFunction <- function(data, height_attr_list, height_attr_freetext, height_type_
     height_stats$mean.pts.height.above.ground[i] <- mean(height_above_ground_i, na.rm = TRUE)
     height_stats$sd.pts.height.above.ground[i] <- sd(height_above_ground_i, na.rm = TRUE)
     
-    dur_i <- as.numeric(datai$timelag)
+    dur_i <- as.numeric(timelag.split[[i]])
     ok <- !is.na(height_above_ground_i) & !is.na(dur_i)
     
     if (sum(dur_i[ok], na.rm = TRUE) > 0) {
@@ -221,7 +223,7 @@ rFunction <- function(data, height_attr_list, height_attr_freetext, height_type_
   height_stats$mean.pts.height.above.ground[last_row] <- mean(height_all, na.rm = TRUE)
   height_stats$sd.pts.height.above.ground[last_row] <- sd(height_all, na.rm = TRUE)
   
-  dur_all <- as.numeric(data$timelag)
+  dur_all <- as.numeric(timelag)
   ok <- !is.na(height_all) & !is.na(dur_all)
   
   if (sum(dur_all[ok], na.rm = TRUE) > 0) {
@@ -279,20 +281,20 @@ rFunction <- function(data, height_attr_list, height_attr_freetext, height_type_
       if (!is.null(brks)) {
         hist_geom <- geom_histogram(
           aes(y = after_stat(density) * ifelse(after_stat(x) < 0, -1, 1)), 
-          breaks = brks, color = "black", fill = "skyblue"
+          breaks = brks, color = "darkblue", fill = "skyblue"
         )
       } else {
         hist_geom <- geom_histogram(
           aes(y = after_stat(density) * ifelse(after_stat(x) < 0, -1, 1)), 
-          bins = 50, color = "black", fill = "skyblue"
+          bins = 50, color = "darkblue", fill = "skyblue"
         )
       }
       
       # ggplot Object
       p <- ggplot(df, aes(x = height)) +
         hist_geom +
-        geom_hline(yintercept = 0, color = "black") +
-        geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
+        geom_hline(yintercept = 0, color = "gray") +
+        geom_vline(xintercept = 0, linetype = "dashed", color = "black", linewidth = 1) +
         scale_y_continuous(labels = abs) +
         labs(title = title, x = "height_above_ground", y = "Density") +
         theme_minimal()
@@ -350,7 +352,7 @@ rFunction <- function(data, height_attr_list, height_attr_freetext, height_type_
         datai <- data.split[[id]]
         height_i <- as.numeric(datai$height_above_ground)
         
-        dur_i <- as.numeric(datai$timelag)
+        dur_i <- as.numeric(timelag.split[[id]])
         
         for (thr in height_thresholds) {
           

@@ -1,77 +1,84 @@
-# Name of App *(Give your app a short and informative title. Please adhere to our convention of Title Case without hyphens (e.g. My New App))*
+# Add Elevation and Height Above Ground
 
 MoveApps
 
-Github repository: *github.com/yourAccount/Name-of-App* *(provide the link to the repository where the code of the App can be found)*
+Github repository: *github.com/movestore/Add_Elevation*
 
 ## Description
-*Enter here the short description of the App that might also be used when filling out the description during App submission to MoveApps. This text is directly presented to Users that look through the list of Apps when compiling Workflows.*
+This App adds ground elevation to each location in a move2 object and calculates height above ground from a selected height/altitude attribute. 
+The App returns the updated data with added columns such as `ground.elevation`, `height_above_ground`, and for ellipsoid heights, `egm08.geoid`. It also creates summary statistics, histogram, and optional threshold-proportion artefacts for height above ground.
 
 ## Documentation
-*Enter here a detailed description of your App. What is it intended to be used for. Which steps of analyses are performed and how. Please be explicit about any detail that is important for use and understanding of the App and its outcomes. You might also refer to the sections below.*
+First the App appends a ground elevation estimate to each location by using the R package `elevatr`. The app gets ground elevation from a global DEM source called Amazon Web Services Terrain Tiles.
+then it calculates height above ground from a selected height/altitude attribute. Before running the App, the user can select a standard Movebank height attribute from a dropdown. 
+If the required attribute is not listed, the user can choose “other”, enter the exact column name, and specify the height type.
+The following height types are handled:
 
+- height above mean sea level / height above msl: `height_above_ground = selected height - ground.elevation`.
+- height above ellipsoid: `height_above_ground = height_above_ellipsoid - ground.elevation + egm08.geoid` (The geoid correction(egm08.geoid) is added to the data as well)
+- height above ground level: the selected values are already height above ground and are copied to `height_above_ground`.
+- for barometric height and height raw types you get just the log info because these are not converted automatically.
+
+If the selected column is missing or contains only NA values, the App searches for possible height/altitude columns by looking for column names containing “height” or “altitude”. 
+These possible columns are reported in the log, and user can run the app again with these given suggestions.
+Negative height_above_ground values could occur.
 ### Application scope
 #### Generality of App usability
-*State here if the App was developed for a specific species, taxon or taxonomic group, or to answer a specific question. How might it influence the scope and utility of the App. This information will help the user to understand why the App might be producing no or odd results.*
-
-*Examples:*
-
-This App was developed using data of birds. 
-
-This App was developed using data of red deer. 
-
 This App was developed for any taxonomic group. 
 
-This App was developed to identify kill sites, but can probably be used to identify any kind of location clusters like nests, dens or drinking holes.
-
 #### Required data properties
-*State here the required and/or optimal data properties for this App to perform properly.*
-
-*Examples:*
-
-This App is only applicable to data that reflect range resident behavior. 
-
-The data should have a fix rate of at least 1 location per 30 minutes. 
-
 The App should work for any kind of (location) data.
 
 ### Input type
-*Indicate which type of input data the App requires.*
-
-*Example*: `move2::move2_loc`
+`move2::move2_loc`
 
 ### Output type
-*Indicate which type of output data the App produces to be passed on to subsequent Apps.*
-
-*Example:* `move2::move2_loc`
+`move2::move2_loc`
 
 ### Artefacts
-*If the App creates artefacts (e.g. csv, pdf, jpeg, shapefiles, etc), please list them here and describe each.*
+The App also creates artefacts:  
+- `height_above_ground_statistics.csv`: summary statistics per track and overall, including number of points, mean, standard deviation, and duration-weighted mean and standard deviation by calculating the Timelag in seconds.  
+- `height_above_ground_histograms.pdf`: histograms of `height_above_ground` for all tracks together and for each track separately.  
+- `height_above_ground_threshold_proportions.csv`: if height thresholds are provided, this table gives the proportion of locations and duration below each threshold.  
 
-*Example:* `rest_overview.csv`: csv-file with Table of all rest site properties
 
 ### Settings 
-*Please list and define all settings/parameters that the App requires to be set by the App user, if necessary including their unit. Please first state the Setting name the user encounters in the Settings menu defined in the appspecs.json, and between brackets the argument used in the R function to be able to identify it quickly in the code if needed.*
 
-*Example:* `Radius of resting site` (radius): Defined radius the animal has to stay in for a given duration of time for it to be considered resting site. Unit: `metres`.
+**`height_above_ground`**: The user selects which height/altitude attribute should be used to calculate it.  
+Options:  
+- `no_selection`: No height column is selected. The App only adds `ground.elevation`. If possible height/altitude columns exist, they are shown in the log.  
+- `height_above_ellipsoid`:so the App applies the EGM2008 geoid correction: height_above_ground = height_above_ellipsoid - ground.elevation + egm08.geoid  
+- `height_above_msl_or_mean_sea_level` :  The App calculates height_above_ground = height - ground.elevation  
+- `height_above_ground_level` : The selected values are already height above ground.  
+- `barometric_height` / `height_raw`:  These are not converted automatically just show the message in log.  
+- `other` : Use this for a custom height/altitude column. The exact column name must be entered in **`height_attr_freetext`**, and the height type must be selected in **`height_type_freetext`**.  
+options for **`height_type_freetext`** are: `msl`, `ellipsoid`, `ground_level`, `unknown`.    
+If the type is `unknown`, the App does not calculate `height_above_ground`.  
+
+**`height_props`**: The optional height thresholds allows users to enter height-above-ground thresholds in meters, for example: `100,200,300,500` separated by comma.  
+If thresholds are provided, the App creates a threshold-proportion table and adapts histogram breaks to include the minimum height, zero, the threshold(s), and the maximum height.   
+If no thresholds are provided, histograms use 50 bins.  
 
 ### Changes in output data
-*Specify here how and if the App modifies the input data. Describe clearly what e.g. each additional column means.*
+The App returns the updated move2 object with the added columns. Depending on the selected option, these may include ground.elevation, egm08.geoid (if height above ellipsoid selected ), and height_above_ground.
 
-*Examples:*
-
-The App adds to the input data the columns `Max_dist` and `Avg_dist`. They contain the maximum distance to the provided focal location and the average distance to it over all locations. 
-
-The App filterers the input data as selected by the user. 
-
-The output data is the outcome of the model applied to the input data. 
-
-The input data remains unchanged.
 
 ### Most common errors
-*Please describe shortly what most common errors of the App can be, how they occur and best ways of solving them.*
+
+- **No height/altitude column selected**: The App only adds `ground.elevation` and does not calculate `height_above_ground`.
+
+- **Selected column not found**: The App reports possible columns containing “height” or “altitude” in the log.
+
+- **Selected column contains only NA values**: `height_above_ground` cannot be calculated.
+
+- **Unknown custom height type**: `height_above_ground` cannot be calculated. The user must select `msl`, `ellipsoid`, or `ground_level`.
+
 
 ### Null or error handling
-*Please indicate for each setting as well as the input data which behaviour the App is supposed to show in case of errors or NULL values/input. Please also add notes of possible errors that can happen if settings/parameters are improperly set and any other important information that you find the user should be aware of.*
 
-*Example:* **Setting `radius`:** If no radius AND no duration are given, the input data set is returned with a warning. If no radius is given (NULL), but a duration is defined then a default radius of 1000m = 1km is set. 
+- If the input data is `NULL` or has 0 rows, the App returns `NULL`.
+- If no height/altitude column is selected, the App returns the data with `ground.elevation` only.
+- If the selected column does not exist, the App reports possible height/altitude columns in the log.
+- If the selected column contains only `NA` values, `height_above_ground` is not calculated.
+- If the custom height type is `unknown`, or the selected attribute is `barometric_height` or `height_raw`, the App stops the height calculation safely.  
+- If height thresholds are missing or invalid, no threshold-proportion file is created.

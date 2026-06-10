@@ -1,198 +1,420 @@
-library('move2')
-library('sf')
-library('progress')
-library('elevatr')
-library('terra')
-library('units')
+library(move2)
+library(sf)
+library(elevatr)
+library(terra)
+library(ggplot2)
 
-#need to update all to move2
-
-rFunction = function(data, adapt_alt=FALSE,height_props=NULL,ellipsoid=FALSE) 
-  {
-  locs <- as.data.frame(st_coordinates(data))
-  names(locs) <- c("x","y")
-  locs_sf <- st_as_sf(x=locs,coords=c("x","y"), crs=st_crs(data))
+rFunction <- function(data, height_attr_list, height_attr_freetext, height_type_freetext, height_props = NULL, ...) {
   
-  data$ground.elevation<-get_elev_point(locs_sf, st_crs(data), src="aws")$elevation
-  #units(data$ground.elevation) <- "m"
+  if (is.null(data) || nrow(data) == 0) {
+    logger.info("Input is NULL or has 0 rows — returning NULL.")
+    return(NULL)
+  }
   
-  #get_elev_point(data, src="aws")$elevation
+  if (!sf::st_is_longlat(data)) data <- sf::st_transform(data, 4326)
+  
+  # Extract coordinates
+  locs <- as.data.frame(sf::st_coordinates(data))
+  locs <- locs[, c("X", "Y")]
+  names(locs) <- c("x", "y")
+  locs_sf <- sf::st_as_sf(locs,coords = c("x", "y"),crs = sf::st_crs(data))
+  
+  # ground elevation
+  data$ground.elevation <- elevatr::get_elev_point(locations = locs_sf, src = "aws")$elevation
   logger.info("The variable ground.elevation in metre was added to your data.")
   
-  egm.file.path <- paste0(getAppFilePath("egm_file"),"us_nga_egm2008_1.tif")
-  geoid <- terra::rast(egm.file.path)
-
-  ann <- terra::extract(geoid,locs_sf)
-  print(names(ann))
-  data$egm08.geoid <- ann[,2] #$us_nga_egm2008_1
-  #units(data$egm08.geoid) <- "m"
-  logger.info("The variable egm08.geoid in metre was added to your data. This will only be used for adaption if your tracks provide height above ellipsoid.")
+  ############
+  #################### Helper: suggest possible height/altitude columns ####################
   
-  if (adapt_alt==TRUE)
-  {
-    height_ix <- grep("height",names(data))
-    altitude_ix <- grep("altitude",names(data))
-    hei_ix <- c(height_ix,altitude_ix)
+  log_possible_height_columns <- function(data) {
+    
+    height_ix <- grep("height", names(data), ignore.case = TRUE)
+    altitude_ix <- grep("altitude", names(data), ignore.case = TRUE)
+    possible_ix <- unique(c(height_ix, altitude_ix))
+    
+    possible_cols <- names(data)[possible_ix]
+    
+    if (length(possible_cols) == 0) {
+      logger.info("No possible height/altitude columns were found in the data.")
+      return(NULL)
+    }
+    
+    possible_cols_with_values <- possible_cols[sapply(possible_cols, function(col) {
+      sum(!is.na(data[[col]])) > 0
+    })]
+    
+    if (length(possible_cols_with_values) > 0) {
+      logger.info(paste0(
+        "Possible height/altitude columns found: ",
+        paste(possible_cols_with_values, collapse = ", "),
+        ". Please choose 'other', enter the exact column name, and specify the height type."
+      ))
+    } else {
+      logger.info(paste0(
+        "Possible height/altitude columns were found, but they contain only NA values: ",
+        paste(possible_cols, collapse = ", ")
+      ))
+    }
+  }
+  #################################### Select height/altitude column ###################
+  
+  if (height_attr_list == "no_selection") {
+    height_col <- NULL
+    logger.info("No height/altitude attribute selected.")
+    log_possible_height_columns(data)
+    return(data)
+    
+  } else if (height_attr_list == "height_above_msl_or_mean_sea_level") {
+    
+    possible_cols <- c("height_above_mean_sea_level", "height_above_msl")
+    height_col <- intersect(possible_cols, names(data))[1]
+    
+    if (is.na(height_col)) {
+      height_col <- NULL
+      logger.info("Neither height_above_mean_sea_level nor height_above_msl exists in the data.")
+      log_possible_height_columns(data)
+      return(data)
+      
+    } else {
+      logger.info(paste0("Selected height above mean sea level attribute: ", height_col))
+    }
+    
+  } else if (height_attr_list == "other") {
+    
+    if (
+      is.null(height_attr_freetext) ||
+      length(height_attr_freetext) == 0 ||
+      identical(height_attr_freetext, list()) ||
+      trimws(as.character(height_attr_freetext)) == ""
+    ) {
+      height_col <- NULL
+      logger.info("You selected 'other', but did not provide a custom height/altitude column name. Only ground elevation will be added.")
+      log_possible_height_columns(data)
+      return(data)
+      
+    } else {
+      height_col <- trimws(height_attr_freetext)
+      logger.info(paste0("Custom height/altitude attribute provided: ", height_col))
+    }
+    
+  } else {
+    
+    height_col <- height_attr_list
+    logger.info(paste0("Selected standard Movebank height/altitude attribute: ", height_col))
+  }
+  
 
-    if (length(hei_ix)>0)
-    {
-      for (hei in hei_ix)
-      {
-        #data_hei <- eval(parse(text=paste("data$",names(data)[hei])))
-        if (all(is.na(data[[hei]]))) logger.info(paste("The variable",names(data)[hei],"contains only NA values. Therefore, no elevation-adapted variable is calculated.")) else
-        {
-          hei_0 <- as.numeric(data[[hei]])
-          #units(hei_0) <- "m"
-          if (ellipsoid==FALSE)
-          {
-            hei_adap <- hei_0 - as.numeric(data$ground.elevation)
-            logger.info("You have selected that your data are height above mean sea level, so no geoid adaption was performed.")
-          } else 
-          {
-            hei_adap <- hei_0 - as.numeric(data$ground.elevation) + as.numeric(data$egm08.geoid)
-          }
-          data$hei_adap<- hei_adap
-          #units(data$hei_adap) <- "m"
-          adap_name <- paste0(names(data)[hei],".adapted")
-          names(data)[which(names(data)=="hei_adap")] <- adap_name
-          logger.info(paste("The variable",names(data)[hei],"was adapted by elevation. The new variable is called:",adap_name))
-          
-          data.split <- split(data, mt_track_id(data))
-          
-          ids <- unique(mt_track_id(data))
-          n <- length(ids)
-          alt_table <- data.frame("track"=c(ids,"all"),"n.pts"=numeric(n+1),"mean.pts.height.adapted"=numeric(n+1),"sd.pts.height.adapted"=numeric(n+1),"mean.dur.height.adapted"=numeric(n+1),"sd.dur.height.adapted"=numeric(n+1))
-          
-          if (is.null(height_props)) 
-          {
-            logger.info ("You have not provided any height thresholds. No file for height proportions will be created. The histograms will break in regular intervals.")
-            
-            pdf(appArtifactPath(paste0("Histograms_",adap_name,".pdf")),width=12,height=8)
-            lapply(data.split, function(z){
-              topl <- as.numeric(z[[adap_name]])
-              if(all(is.na(topl))){
-                logger.info(paste0("There are no altitudes annotated for ", unique(mt_track_id(z))," (all NA), therefore no histogram is produced for this individual."))
-                return(NULL)
-              }
-              hist(topl,xlim=c(quantile(topl,probs=0.01,na.rm=TRUE),quantile(topl,probs=0.99,na.rm=TRUE)),breaks=length(topl)/10,main=paste("Histogramme of", unique(mt_track_id(z))),xlab=adap_name,freq=FALSE,col="blue")
-            })
-            toplA <- data[[adap_name]]
-            hist(toplA,xlim=c(quantile(toplA,probs=0.01,na.rm=TRUE),quantile(toplA,probs=0.99,na.rm=TRUE)),breaks=length(toplA)/10,main="Histogramme of all tracks",freq=FALSE,col="red",xlab=adap_name)
-            dev.off()
-            
-          } else
-          {
-            if (!any(names(data)=="timelag")) logger.info("The variable 'timelag' is missing in your data set. Please make sure to run the Time Lag Between Locations App (and Adapt Time Lag for Regular Gaps App) before in your Workflow. Duration weighted height statistics cannot be provided.")
-            
-            hei_props <- sort(as.numeric(trimws(strsplit(as.character(height_props),",")[[1]])),decreasing=FALSE)
-            n.prop <- length(hei_props)
-            logger.info (paste0("You have provided the following height thresholds: ",paste(hei_props,collapse=", "),". A propotions file will be generated and the histograms' breaks will be adapted to the thresholds."))
-
-            prop_table <- data.frame("track"=rep(c(ids,"mean","sd"),each=n.prop),"height_threshold"=rep(hei_props,times=n+2),"n.loc"=numeric((n+2)*n.prop),"prop.locs"=numeric((n+2)*n.prop),"prop.dur"=numeric((n+2)*n.prop))
-            n.loc <- prop.loc <- prop.dur <- numeric(n.prop)
-              
-            for (i in seq(along=data.split))
-            {
-              datai <- data.split[[i]]
-              ix <- which(prop_table$track==unique(mt_track_id(datai)))
-              hei_adap_i <- as.numeric(datai[[adap_name]])
-              if(any(names(data)=="timelag")) dur_i <- datai$timelag # from TimeLag App
-              
-              for (j in seq(along=hei_props))
-              {
-                ixj <- which(hei_adap_i<hei_props[j])
-                n.loc[j] <- length(ixj)
-                if (n.loc[j]>0) 
-                {
-                  prop.loc[j] <- n.loc[j]/length(datai)
-                  if(any(names(data)=="timelag")) prop.dur[j] <- sum(dur_i[ixj],na.rm=TRUE)/sum(dur_i,na.rm=TRUE) else prop.dur[j] <- NA
-                } else prop.loc[j] <- prop.dur[j] <- NA
-              }
-                
-              prop_table[which(prop_table$track==unique(mt_track_id(datai))),3:5] <- data.frame(n.loc,prop.loc,prop.dur)
-              }
-              
-              for (k in seq(along=hei_props))
-              {
-                ixk <- which(prop_table$height_threshold==hei_props[k] & prop_table$track %in% ids)
-                prop_table[which(prop_table$track=="mean" & prop_table$height_threshold==hei_props[k]),3] <- length(prop_table$n.loc[ixk])
-                prop_table[which(prop_table$track=="mean" & prop_table$height_threshold==hei_props[k]),4] <- mean(prop_table$prop.loc[ixk],na.rm=TRUE)
-                prop_table[which(prop_table$track=="mean" & prop_table$height_threshold==hei_props[k]),5] <- mean(prop_table$prop.dur[ixk],na.rm=TRUE)
-                
-                prop_table[which(prop_table$track=="sd" & prop_table$height_threshold==hei_props[k]),3] <- length(prop_table$n.loc[ixk])
-                prop_table[which(prop_table$track=="sd" & prop_table$height_threshold==hei_props[k]),4] <- sd(prop_table$prop.loc[ixk],na.rm=TRUE)
-                prop_table[which(prop_table$track=="sd" & prop_table$height_threshold==hei_props[k]),5] <- sd(prop_table$prop.dur[ixk],na.rm=TRUE)
-              }
-              write.csv(prop_table,appArtifactPath(paste0("Thr_prop_adap_",adap_name,".csv")),row.names=FALSE)
-              
-            # adapted breaks for hei_props
-            pdf(appArtifactPath(paste0("Histograms_",adap_name,".pdf")),width=12,height=8)
-            lapply(data.split, function(z){
-              topl <- z[[adap_name]]
-              if (any(!is.na(topl)))
-              {
-                min_topl <- min(topl,na.rm=TRUE)
-                max_topl <- max(topl,na.rm=TRUE)
-                if (min(hei_props)>0) brks <- c(min_topl,0,hei_props,max_topl)
-                if (max(hei_props)<0) brks <- c(min_topl,hei_props,0,max_topl) 
-                if (min(hei_props)<=0 & max(hei_props)>=0) brks <- c(min_topl,hei_props,max_topl)
-                
-              hist(topl,xlim=c(quantile(topl,probs=0.01,na.rm=TRUE),quantile(topl,probs=0.99,na.rm=TRUE)),breaks=brks,main=paste("Histogramme of", unique(mt_track_id(z))),xlab=adap_name,freq=FALSE,col="blue",ylab="Probability density")
-              }
-            })
-            toplA <- data[[adap_name]]
-            if (any(!is.na(toplA)))
-            {
-              min_toplA <- min(toplA,na.rm=TRUE)
-              max_toplA <- max(toplA,na.rm=TRUE)
-              if (min(hei_props)>0) brksA <- c(min_toplA,0,hei_props,max_toplA)
-              if (max(hei_props)<0) brksA <- c(min_toplA,hei_props,0,max_toplA) 
-              if (min(hei_props)<=0 & max(hei_props)>=0) brksA <- c(min_toplA,hei_props,max_toplA)
-              
-              hist(toplA,xlim=c(quantile(toplA,probs=0.01,na.rm=TRUE),quantile(toplA,probs=0.99,na.rm=TRUE)),breaks=brksA,main="Histogramme of all tracks",freq=FALSE,col="red",xlab=adap_name,ylab="Probability density")
-            }
-            dev.off()
-            
-          }
-          
-          # now same for both cases
-          
-          for (i in seq(along=data.split))
-          {
-            datai <- data.split[[i]]
-            ix <- which(alt_table$track==unique(mt_track_id(datai)))
-            hei_adap_i <- datai[[adap_name]]
-            alt_table$mean.pts.height.adapted[ix] <- mean(hei_adap_i,na.rm=TRUE)
-            alt_table$sd.pts.height.adapted[ix] <- sd(hei_adap_i,na.rm=TRUE)
-            if (any(names(datai)=="timelag")) 
-            {
-              dur_i <- as.numeric(datai$timelag) # from TimeLag App
-              mu_i <- sum(hei_adap_i*dur_i,na.rm=TRUE)/sum(dur_i,na.rm=TRUE)
-              alt_table$mean.dur.height.adapted[ix] <- mu_i
-              alt_table$sd.dur.height.adapted[ix] <- sqrt(sum((hei_adap_i-mu_i)*(hei_adap_i-mu_i)*dur_i,na.rm=TRUE)/sum(dur_i,na.rm=TRUE)) #sqrt(weighted variance)
-             } else alt_table$mean.dur.height.adapted[ix] <- alt_table$sd.dur.height.adapted[ix] <- NA
-            alt_table$n.pts[ix] <- length(hei_adap_i[!is.na(hei_adap_i)])
-          }
-          
-          alt_table$mean.pts.height.adapted[n+1] <- mean(hei_adap,na.rm=TRUE)
-          alt_table$sd.pts.height.adapted[n+1] <- sd(hei_adap,na.rm=TRUE)
-          if (any(names(data)=="timelag")) 
-          {
-            dur <- as.numeric(data$timelag)
-            mu <- sum(hei_adap*dur,na.rm=TRUE)/sum(dur,na.rm=TRUE)
-            alt_table$mean.dur.height.adapted[n+1] <- mu
-            alt_table$sd.dur.height.adapted[n+1] <- sqrt(sum((hei_adap-mu)*(hei_adap-mu)*dur,na.rm=TRUE)/sum(dur,na.rm=TRUE))
-          } else alt_table$mean.dur.height.adapted[n+1] <- alt_table$sd.dur.height.adapted[n+1] <- NA
-          alt_table$n.pts[n+1] <- length(hei_adap[!is.na(hei_adap)])
-          write.csv(alt_table,appArtifactPath(paste0("Adapted.stats",adap_name,".csv")),row.names=FALSE)
+  if (is.null(height_col)) {return(data)}
+  
+  # Check that provided column exists
+  if (!height_col %in% names(data)) {
+    logger.info(paste0( "The selected/provided height attribute '", height_col, "' does not exist in the data set."))
+    log_possible_height_columns(data)
+    return(data)
+  }
+  
+  # Extract selected height values
+  hei_0 <- as.numeric(data[[height_col]])
+  
+  if (all(is.na(hei_0))) {
+    logger.info(paste0("The selected height/altitude attribute '",height_col, "' contains only NA values."))
+    log_possible_height_columns(data)
+    return(data)
+  }
+  
+  
+  ##################### Calculate height above ground  #######################################
+  if (
+    height_col %in% c("height_above_mean_sea_level", "height_above_msl") ||
+    (height_attr_list == "other" && height_type_freetext == "msl")
+  ) {
+    
+    height_above_ground <- hei_0 - as.numeric(data$ground.elevation)
+    data$height_above_ground <- height_above_ground
+    logger.info("You have selected that your data are height above mean sea level.")
+    
+  } else if (
+    height_col == "height_above_ellipsoid" ||
+    (height_attr_list == "other" && height_type_freetext == "ellipsoid")
+  ) {
+    
+    # Add EGM2008 geoid correction values
+    egm.file.path <- getAuxiliaryFilePath("egm_file")
+    geoid <- terra::rast(egm.file.path)
+    
+    ann <- terra::extract(geoid, locs_sf)
+    data$egm08.geoid <- ann[, 2]
+    logger.info("The variable egm08.geoid in metre was added to your data for ellipsoid height correction.")
+    
+    height_above_ground <- hei_0 - as.numeric(data$ground.elevation) + as.numeric(data$egm08.geoid)
+    data$height_above_ground <- height_above_ground
+    logger.info("Height above ground was calculated using ground.elevation and EGM2008 geoid correction.")
+    
+  } else if (
+    height_col == "height_above_ground_level" ||
+    (height_attr_list == "other" && height_type_freetext == "ground_level")
+  ) {
+    
+    data$height_above_ground <- hei_0
+    logger.info("Height is already above ground level. No correction was applied.")
+    
+  } else if (height_col == "barometric_height") {
+    logger.info("Barometric height cannot be safely converted automatically; height above ground was not calculated.")
+    return(data)
+    
+  } else if (height_col == "height_raw") {
+    
+    logger.info("Raw height values may require preprocessing, so height above ground was not calculated.")
+    return(data)
+    
+  } else {
+    logger.info("The selected height type is unknown or unsupported, so height above ground was not calculated.")
+    return(data)
+  }
+############################################################################
+  #########  artefact/statistics part
+  
+  timelag <- as.numeric(move2::mt_time_lags(data, units = "secs"))
+  
+  data.split <- split(data, mt_track_id(data))
+  timelag.split <- split(timelag, mt_track_id(data))
+  
+  ids <- names(data.split)
+  n <- length(ids)
+  
+  ############### Create statistics CSV ###########################
+  
+  height_stats <- data.frame(
+    track = c(ids, "all"),
+    n.pts = numeric(n + 1),
+    mean.pts.height.above.ground = rep(NA_real_, n + 1),
+    sd.pts.height.above.ground = rep(NA_real_, n + 1),
+    mean.dur.height.above.ground = rep(NA_real_, n + 1),
+    sd.dur.height.above.ground = rep(NA_real_, n + 1)
+  )
+  
+  for (i in seq_along(data.split)) {
+    
+    datai <- data.split[[i]]
+    height_above_ground_i <- as.numeric(datai$height_above_ground)
+    
+    height_stats$n.pts[i] <- sum(!is.na(height_above_ground_i))
+    height_stats$mean.pts.height.above.ground[i] <- mean(height_above_ground_i, na.rm = TRUE)
+    height_stats$sd.pts.height.above.ground[i] <- sd(height_above_ground_i, na.rm = TRUE)
+    
+    dur_i <- as.numeric(timelag.split[[i]])
+    ok <- !is.na(height_above_ground_i) & !is.na(dur_i)
+    
+    if (sum(dur_i[ok], na.rm = TRUE) > 0) {
+      mu_i <- sum(height_above_ground_i[ok] * dur_i[ok], na.rm = TRUE) /
+        sum(dur_i[ok], na.rm = TRUE)
+      
+      height_stats$mean.dur.height.above.ground[i] <- mu_i
+      height_stats$sd.dur.height.above.ground[i] <-
+        sqrt(sum((height_above_ground_i[ok] - mu_i)^2 * dur_i[ok], na.rm = TRUE) /
+               sum(dur_i[ok], na.rm = TRUE))
+    }
+  }
+  
+  height_all <- as.numeric(data$height_above_ground)
+  last_row <- n + 1
+  
+  height_stats$n.pts[last_row] <- sum(!is.na(height_all))
+  height_stats$mean.pts.height.above.ground[last_row] <- mean(height_all, na.rm = TRUE)
+  height_stats$sd.pts.height.above.ground[last_row] <- sd(height_all, na.rm = TRUE)
+  
+  dur_all <- as.numeric(timelag)
+  ok <- !is.na(height_all) & !is.na(dur_all)
+  
+  if (sum(dur_all[ok], na.rm = TRUE) > 0) {
+    mu_all <- sum(height_all[ok] * dur_all[ok], na.rm = TRUE) /
+      sum(dur_all[ok], na.rm = TRUE)
+    
+    height_stats$mean.dur.height.above.ground[last_row] <- mu_all
+    height_stats$sd.dur.height.above.ground[last_row] <-
+      sqrt(sum((height_all[ok] - mu_all)^2 * dur_all[ok], na.rm = TRUE) /
+             sum(dur_all[ok], na.rm = TRUE))
+  }
+  
+  
+  write.csv(height_stats, appArtifactPath("height_above_ground_statistics.csv"), row.names = FALSE)
+  logger.info("The file height_above_ground_statistics.csv was created.")
+  
+  #################### Histogram PDF ####################
+  
+  if ("height_above_ground" %in% names(data)) {
+    
+    plot_height_hist <- function(x, title) {
+      x <- as.numeric(x)
+      x <- x[!is.na(x)]
+      
+      if (length(x) == 0) {
+        if (exists("logger")) {
+          logger.info(paste0("No height_above_ground values for ", title))
+        } else {
+          message(paste0("No height_above_ground values for ", title))
+        }
+        return(NULL)
+      }
+      
+      
+      df <- data.frame(height = x)
+      
+      # Breaks
+      brks <- NULL
+      
+      if (
+        !is.null(height_props) &&
+        !identical(height_props, list()) &&
+        length(height_props) > 0 &&
+        trimws(as.character(height_props)) != ""
+      ) {
+        hei_props <- sort(as.numeric(trimws(strsplit(as.character(height_props), ",")[[1]])))
+        calculated_brks <- sort(unique(c(min(x), 0, hei_props, max(x))))
+        
+        if (length(calculated_brks) >= 2) {
+          brks <- calculated_brks
         }
       }
-    } else logger.info("There are no height or altitude variables in your data set.")
+      
+      # Histogram
+      if (!is.null(brks)) {
+        hist_geom <- geom_histogram(
+          aes(y = after_stat(density) * ifelse(after_stat(x) < 0, -1, 1)), 
+          breaks = brks, color = "darkblue", fill = "skyblue"
+        )
+      } else {
+        hist_geom <- geom_histogram(
+          aes(y = after_stat(density) * ifelse(after_stat(x) < 0, -1, 1)), 
+          bins = 50, color = "darkblue", fill = "skyblue"
+        )
+      }
+      
+      # ggplot Object
+      p <- ggplot(df, aes(x = height)) +
+        hist_geom +
+        geom_hline(yintercept = 0, color = "gray") +
+        geom_vline(xintercept = 0, linetype = "dashed", color = "black", linewidth = 1) +
+        scale_y_continuous(labels = abs) +
+        labs(title = title, x = "height_above_ground", y = "Density") +
+        theme_minimal()
+      
+      print(p)
+      return(p)
+    }
     
-  } else logger.info ("You did not select to adapt height or altitude.")
+    pdf(appArtifactPath("height_above_ground_histograms.pdf"), width = 12, height = 8)
+    
+    
+    # all tracks
+    plot_height_hist(data$height_above_ground, "Histogram of all tracks")
+    
+    # per track
+    lapply(names(data.split), function(id) {
+      plot_height_hist(data.split[[id]]$height_above_ground,
+                       paste("Histogram of", id))
+    })
+    
+    dev.off()
+    
+    logger.info("The file height_above_ground_histograms.pdf was created.")
+    
+  } else {
+    logger.info("height_above_ground was not created, so no histogram PDF was produced.")
+  } 
   
-  result <- data
+  
+  #################### Threshold proportions ####################
+  
+  if (
+    !is.null(height_props) &&
+    !identical(height_props, list()) &&
+    length(height_props) > 0 &&
+    trimws(as.character(height_props)) != ""
+  ) {
+    
+    height_thresholds <- sort(as.numeric(trimws(strsplit(as.character(height_props), ",")[[1]])))
+    height_thresholds <- height_thresholds[!is.na(height_thresholds)]
+    
+    if (length(height_thresholds) == 0) {
+      logger.info("No valid height thresholds were provided. Threshold proportions were not calculated.")
+    } else {
+      
+      logger.info(paste0(
+        "Height threshold proportions will be calculated for: ",
+        paste(height_thresholds, collapse = ", ")
+      ))
+      
+      prop_table <- data.frame()
+      
+      for (id in ids) {
+        
+        datai <- data.split[[id]]
+        height_i <- as.numeric(datai$height_above_ground)
+        
+        dur_i <- as.numeric(timelag.split[[id]])
+        
+        for (thr in height_thresholds) {
+          
+          valid_height <- !is.na(height_i)
+          below_thr <- valid_height & height_i < thr
+          
+          n_loc <- sum(below_thr)
+          
+          if (sum(valid_height) > 0) {
+            prop_locs <- n_loc / sum(valid_height)
+          } else {
+            prop_locs <- NA
+          }
+          
+          
+          if (sum(dur_i[valid_height], na.rm = TRUE) > 0) {
+            prop_dur <- sum(dur_i[below_thr], na.rm = TRUE) / 
+              sum(dur_i[valid_height], na.rm = TRUE)
+          } else {
+            prop_dur <- NA
+          }
+          
+          prop_table <- rbind(prop_table, data.frame(track = id,height_threshold = thr,n.loc = n_loc, prop.locs = prop_locs, prop.dur = prop_dur) )
+        }
+      }
+      
+      # Add mean and sd rows across tracks
+      mean_rows <- aggregate(
+        cbind(n.loc, prop.locs, prop.dur) ~ height_threshold,
+        data = prop_table,
+        FUN = function(x) if (all(is.na(x))) NA_real_ else mean(x, na.rm = TRUE),
+        na.action = na.pass
+      )
+      mean_rows$track <- "mean"
+      
+      sd_rows <- aggregate(
+        cbind(n.loc, prop.locs, prop.dur) ~ height_threshold,
+        data = prop_table,
+        FUN = function(x) if (all(is.na(x))) NA_real_ else sd(x, na.rm = TRUE),
+        na.action = na.pass
+      )
+      sd_rows$track <- "sd"
+      
+      prop_table <- rbind(prop_table, mean_rows[, names(prop_table)], sd_rows[, names(prop_table)])
+      write.csv(prop_table,appArtifactPath("height_above_ground_threshold_proportions.csv"),row.names = FALSE )
+      logger.info("The file height_above_ground_threshold_proportions.csv was created.")
+    }
+    
+  } else {
+    logger.info("No height thresholds were provided. Threshold proportions were not calculated.")
+  }
+#################### 
+  
+  
+  return(data)
+  
+} 
 
-  # provide my result to the next app in the MoveApps workflow
-  return(result)
-}
+
+
+
+
+
+
+

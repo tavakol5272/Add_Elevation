@@ -1,0 +1,71 @@
+#Only ground elevation, no height above ground:
+{
+  "height_attr_list": "no_selection",
+  "height_attr_freetext": null,
+  "height_type_freetext": "unknown",
+  "height_props": null
+}
+
+#Standard MSL height
+{
+  "height_attr_list": "height_above_msl_or_mean_sea_level",
+  "height_attr_freetext": null,
+  "height_type_freetext": "unknown",
+  "height_props": null
+}
+
+#Standard ellipsoid height
+{
+  "height_attr_list": "height_above_ellipsoid",
+  "height_attr_freetext": null,
+  "height_type_freetext": "unknown",
+  "height_props": null
+}
+
+#Already height above ground
+{
+  "height_attr_list": "height_above_ground_level",
+  "height_attr_freetext": null,
+  "height_type_freetext": "unknown",
+  "height_props": null
+}
+
+#Barometric height warning test
+{
+  "height_attr_list": "barometric_height",
+  "height_attr_freetext": null,
+  "height_type_freetext": "unknown",
+  "height_props": null
+}
+
+#Raw height warning test
+{
+  "height_attr_list": "height_raw",
+  "height_attr_freetext": null,
+  "height_type_freetext": "unknown",
+  "height_props": null
+}
+
+#Custom column treated as MSL
+{
+  "height_attr_list": "other",
+  "height_attr_freetext": "altitude",
+  "height_type_freetext": "msl",
+  "height_props": null
+}
+
+#Custom column treated as already ground level
+{
+  "height_attr_list": "other",
+  "height_attr_freetext": "altitude",
+  "height_type_freetext": "ground_level",
+  "height_props": null
+}
+
+#est threshold proportions
+{
+  "height_attr_list": "height_above_msl_or_mean_sea_level",
+  "height_attr_freetext": null,
+  "height_type_freetext": "unknown",
+  "height_props": "100,200,300,500"
+}

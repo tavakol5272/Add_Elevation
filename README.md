@@ -5,47 +5,80 @@ MoveApps
 Github repository: *github.com/movestore/Add_Elevation*
 
 ## Description
-This App annotates all locations with ground elevation (DEM, 30m resolution) and optionally provides corrected height/altitude values and histograms/stats thereof. Height above ellipsoid can additionally be adapted by geoid height (EGM2008). (R package `elevatr`)
+This App adds ground elevation to each location in a move2 object and calculates height above ground from a selected height/altitude attribute. 
+The App returns the updated data with added columns such as `ground.elevation`, `height_above_ground`, and for ellipsoid heights, `egm08.geoid`. It also creates summary statistics, histogram, and optional threshold-proportion artefacts for height above ground.
 
 ## Documentation
-Using the R package `elevatr`, this App appends a ground elevation estimate (DEM) to each location of the data set. We have selected to use DEM from the Amazon Web Services Terrain Tiles at a resolution of 30 m, which is available globally.
+First the App appends a ground elevation estimate to each location by using the R package `elevatr`. The app gets ground elevation from a global DEM source called Amazon Web Services Terrain Tiles.
+then it calculates height above ground from a selected height/altitude attribute. Before running the App, the user can select a standard Movebank height attribute from a dropdown. 
+If the required attribute is not listed, the user can choose “other”, enter the exact column name, and specify the height type.
+The following height types are handled:
 
-In case the `adapt_alt` parameter is set to TRUE, the algorithm detects altitude/height measures in your data (by the phrases `height` or `altitude`) and adapts it by subtracting the DEM estimate from it, i.e. transforming a height above mean sea level to height above ground. It then generates a table of mean and standard deviation (sd) individual adapted altitudes/heights and histograms as well as duration adapted mean and sd individual adapted values. Please note that height measurements of any tracking devices have rather large errors.
+- height above mean sea level / height above msl: `height_above_ground = selected height - ground.elevation`.
+- height above ellipsoid: `height_above_ground = height_above_ellipsoid - ground.elevation + egm08.geoid` (The geoid correction(egm08.geoid) is added to the data as well)
+- height above ground level: the selected values are already height above ground and are copied to `height_above_ground`.
+- for barometric height and height raw types you get just the log info because these are not converted automatically.
 
-If your data contain height above ellispoid, please select the setting `Adapt for height above ellipsoid`. Then your adapted altitude will additioanlly be adapted with a modelled geoid height (i.e. added to it) at each location, to get the true height of your animal. Geoid height is a complex value that differs by region, but has been obtained in 1 arc-minute resolution from the [Earth Gravitational Model 2008 (EGM2008)](https://earth-info.nga.mil/index.php?dir=wgs84&action=wgs84#tab_egm2008). 
+If the selected column is missing or contains only NA values, the App searches for possible height/altitude columns by looking for column names containing “height” or “altitude”. 
+These possible columns are reported in the log, and user can run the app again with these given suggestions.
+Negative height_above_ground values could occur.
+### Application scope
+#### Generality of App usability
+This App was developed for any taxonomic group. 
 
-Ground elevation, EGM2008 geoid height as well as the adapted height/altitude measure are appended to the input data set and passed on to the next App. Thus, they can be used as attribute parameters there. Furthermore, they can be written as part of the data set to output files if using the rds 2 csv, Write Shapefile, Write GPX or similar Apps.
+#### Required data properties
+The App should work for any kind of (location) data.
 
-It is necessary to include the Time Lag Between Locations App before this App in the workflow.
+### Input type
+`move2::move2_loc`
 
-### Input data
-move2_location object
-
-### Output data
-move2_location object
+### Output type
+`move2::move2_loc`
 
 ### Artefacts
-`Altitude.adapted.stats.csv`:  table of number of locations, mean and standard deviation adapted height/altitude and (by duration) weighted mean and standard deviation. Values are given per track and overall. (only available if `adapt_alt` is TRUE).
+The App also creates artefacts:  
+- `height_above_ground_statistics.csv`: summary statistics per track and overall, including number of points, mean, standard deviation, and duration-weighted mean and standard deviation by calculating the Timelag in seconds.  
+- `height_above_ground_histograms.pdf`: histograms of `height_above_ground` for all tracks together and for each track separately.  
+- `height_above_ground_threshold_proportions.csv`: if height thresholds are provided, this table gives the proportion of locations and duration below each threshold.  
 
-`Histograms_height.above.ellipsoid.adapted.pdf`: histogrammes of altitude/height distribution for each track and overall. If `height_props` are given, the breaks of the histograms are aligned to them, else equidistant (only available if `adapt_alt` is TRUE).
-
-`Thr_prop_adap_Altitude.csv`: table of proportions of locations and durations for each height threshold and track. For each threshold, an average and standard deviation value are given, in addition. (only available if `adapt_alt` is TRUE).
 
 ### Settings 
-**Adapt altitude (`adapt_alt`):** Select if you want to add a DEM adapted height variable as an additional attribute. Default FALSE. See details above.
 
-**Adapt for height above ellipsoid (`ellipsoid`):** Select if your tracks contain height above ellipsoid measurements. Then the adapted altitude for all locations will also include an addition of local geoid height. Default FALSE.
+**`height_above_ground`**: The user selects which height/altitude attribute should be used to calculate it.  
+Options:  
+- `no_selection`: No height column is selected. The App only adds `ground.elevation`. If possible height/altitude columns exist, they are shown in the log.  
+- `height_above_ellipsoid`:so the App applies the EGM2008 geoid correction: height_above_ground = height_above_ellipsoid - ground.elevation + egm08.geoid  
+- `height_above_msl_or_mean_sea_level` :  The App calculates height_above_ground = height - ground.elevation  
+- `height_above_ground_level` : The selected values are already height above ground.  
+- `barometric_height` / `height_raw`:  These are not converted automatically just show the message in log.  
+- `other` : Use this for a custom height/altitude column. The exact column name must be entered in **`height_attr_freetext`**, and the height type must be selected in **`height_type_freetext`**.  
+options for **`height_type_freetext`** are: `msl`, `ellipsoid`, `ground_level`, `unknown`.    
+If the type is `unknown`, the App does not calculate `height_above_ground`.  
 
-**Height thresholds for proportional use (`height_props`):** One or more height thresholds (in metre) that you want proportional use calculated for. For multiple values please separate by comma. Default NULL (then no proportional use is calculated).
+**`height_props`**: The optional height thresholds allows users to enter height-above-ground thresholds in meters, for example: `100,200,300,500` separated by comma.  
+If thresholds are provided, the App creates a threshold-proportion table and adapts histogram breaks to include the minimum height, zero, the threshold(s), and the maximum height.   
+If no thresholds are provided, histograms use 50 bins.  
 
-### Null or error handling:
-**Adapt altitude (`adapt_alt`):** If TRUE, problems can occur if the name of the altitude variable does not contain the phrases 'height' or 'altitude'.
-
-**Adapt for height above ellipsoid (`ellipsoid`):** If your tracks are mixes of height above ellipsoid and height above mean sea level, it is not possible to select adaptation of part of the data only. Then, please split your workflow into two workflow instances.
-
-**Height thresholds for proportional use (`height_props`):** If NULL (default), no proportional use is calculated and the histogram breaks become equidistant.
-
-**Data:** The input data set is returned with one or two additional attributes. Should not lead to errors. 
+### Changes in output data
+The App returns the updated move2 object with the added columns. Depending on the selected option, these may include ground.elevation, egm08.geoid (if height above ellipsoid selected ), and height_above_ground.
 
 
+### Most common errors
 
+- **No height/altitude column selected**: The App only adds `ground.elevation` and does not calculate `height_above_ground`.
+
+- **Selected column not found**: The App reports possible columns containing “height” or “altitude” in the log.
+
+- **Selected column contains only NA values**: `height_above_ground` cannot be calculated.
+
+- **Unknown custom height type**: `height_above_ground` cannot be calculated. The user must select `msl`, `ellipsoid`, or `ground_level`.
+
+
+### Null or error handling
+
+- If the input data is `NULL` or has 0 rows, the App returns `NULL`.
+- If no height/altitude column is selected, the App returns the data with `ground.elevation` only.
+- If the selected column does not exist, the App reports possible height/altitude columns in the log.
+- If the selected column contains only `NA` values, `height_above_ground` is not calculated.
+- If the custom height type is `unknown`, or the selected attribute is `barometric_height` or `height_raw`, the App stops the height calculation safely.  
+- If height thresholds are missing or invalid, no threshold-proportion file is created.

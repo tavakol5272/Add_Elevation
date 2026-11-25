@@ -2,77 +2,87 @@
   "version": "1.2",
   "settings": [
     {
-  "id": "height_attr_list",
-  "name": "Choose the height/altitude attribute to calculate height above ground",
-  "description": "Select one standard Movebank height/altitude attribute. If the correct attribute is not listed, select 'other' and enter the exact column name in the text field below.",
-  "type": "DROPDOWN",
-  "defaultValue": "no_selection",
-  "options": [{
-      "value": "no_selection",
-      "displayText": "no selection"
+      "id": "height_selection",
+      "name": "Height/altitude column selection",
+      "description": "Select how the App should choose the height/altitude column(s) for which height above ground is calculated. For option 1 and 2 please fill out the corresponding fields in the settings below. Option 3 uses all standard Movebank height attributes present in the data (height above ellipsoid, height above mean sea level, height above ground level); the settings for option 1 and 2 are then ignored. For each adapted column a new column '<column name>.adapted' is added. Barometric and raw heights are not adapted.",
+      "defaultValue": "select_height_attr_list",
+      "type": "RADIOBUTTONS",
+      "options": [
+        {
+          "value": "select_height_attr_list",
+          "displayText": "1: Choose one standard Movebank height attribute from the list"
+        },
+        {
+          "value": "type_height_attr_name",
+          "displayText": "2: Type the exact height/altitude column name"
+        },
+        {
+          "value": "calculate_all_height_columns",
+          "displayText": "3: Calculate for all standard Movebank height attributes in the data"
+        }
+      ]
     },
     {
-      "value": "height_above_ellipsoid",
-      "displayText": "height_above_ellipsoid"
+      "id": "height_attr_list",
+      "name": "Option 1: Standard Movebank height attribute",
+      "description": "Only used for option 1. Select the standard Movebank height attribute for which height above ground is calculated.",
+      "type": "DROPDOWN",
+      "defaultValue": "no_selection",
+      "options": [
+        {
+          "value": "no_selection",
+          "displayText": "no selection"
+        },
+        {
+          "value": "height_above_ellipsoid",
+          "displayText": "height_above_ellipsoid"
+        },
+        {
+          "value": "height_above_msl_or_mean_sea_level",
+          "displayText": "height_above_mean_sea_level / height_above_msl"
+        },
+        {
+          "value": "height_above_ground_level",
+          "displayText": "height_above_ground_level"
+        }
+      ]
     },
     {
-      "value": "height_above_msl_or_mean_sea_level",
-      "displayText": "height_above_mean_sea_level/msl"
+      "id": "height_attr_freetext",
+      "name": "Option 2: Exact height/altitude column name",
+      "description": "Only used for option 2. Enter the column name exactly as it appears in the data set. The artefact height_columns_overview.csv lists the possible height columns of your data and, for non-standard names, a suggested height type.",
+      "defaultValue": null,
+      "type": "STRING"
     },
     {
-      "value": "height_above_ground_level",
-      "displayText": "height_above_ground_level"
+      "id": "height_type_freetext",
+      "name": "Option 2: Height reference type",
+      "description": "Only used for option 2. Defines how the values of the typed column are converted to height above ground. If 'unknown' is selected, the column is not adapted, unless it is a standard Movebank attribute with a known type.",
+      "type": "DROPDOWN",
+      "defaultValue": "unknown",
+      "options": [
+        {
+          "value": "unknown",
+          "displayText": "unknown / do not adapt"
+        },
+        {
+          "value": "msl",
+          "displayText": "height above mean sea level"
+        },
+        {
+          "value": "ellipsoid",
+          "displayText": "height above ellipsoid"
+        },
+        {
+          "value": "ground_level",
+          "displayText": "height above ground level"
+        }
+      ]
     },
     {
-      "value": "barometric_height",
-      "displayText": "barometric_height"
-    },
-    {
-      "value": "height_raw",
-      "displayText": "height_raw"
-    },
-    {
-      "value": "other",
-      "displayText": "other / custom column name"
-    }
-    ]
- },
- {
-  "id": "height_attr_freetext",
-  "name": "OR provide column name of custom height/altitude attribute in the data set if not present in the selection above.",
-  "description": "Use this only if you selected 'other'. Enter the exact column name as it appears in the data set.",
-  "defaultValue": null,
-  "type": "STRING"
-	},
-	{
-  "id": "height_type_freetext",
-  "name": "Type of the custom height/altitude attribute",
-  "description": "Use this only if you selected 'other'. This tells the app how the custom height column should be interpreted.",
-  "type": "DROPDOWN",
-  "defaultValue": "unknown",
-  "options": [
-    {
-      "value": "unknown",
-      "displayText": "unknown / do not adapt"
-    },
-    {
-      "value": "msl",
-      "displayText": "height above mean sea level"
-    },
-    {
-      "value": "ellipsoid",
-      "displayText": "height above ellipsoid"
-    },
-    {
-      "value": "ground_level",
-      "displayText": "height above ground level"
-    }
-  ]
- },
- {
       "id": "height_props",
       "name": "Height thresholds for proportional use",
-      "description": "Insert the required adapted heights/altitudes (in metre) for which the usage proportions shall be calculated. Values must be positive. If you want more than one height, enter them in ascending order and separate by comma. Example: 100,200,300,500. Defaults to NULL (no proportions calculated, histogram breaks regular).",
+      "description": "Optional. Heights above ground in metres for which the proportion of locations and of time below each height is calculated, separated by commas. Example: 100,200,300,500. If left empty, no proportions are calculated and the histograms use 50 regular bins.",
       "defaultValue": null,
       "type": "STRING"
     }
@@ -88,16 +98,16 @@
       {
         "name": "move2"
       },
-	  {
+      {
         "name": "sf"
       },
-	  {
+      {
         "name": "elevatr"
       },
-	  {
+      {
         "name": "terra"
       },
-	  {
+      {
         "name": "ggplot2"
       }
     ]
@@ -110,16 +120,16 @@
   "keywords": [
     "ground elevation",
     "DEM",
-	"Digital Elevation Model",
+    "Digital Elevation Model",
     "true altitude",
-	"adapted altitude",
-	"height above ground",
-	"geoid",
-	"EGM2008"
+    "adapted altitude",
+    "height above ground",
+    "geoid",
+    "EGM2008"
   ],
   "people": [
     {
-     "firstName": "Andrea",
+      "firstName": "Andrea",
       "middleInitials": null,
       "lastName": "Kölzsch",
       "email": "akoelzsch@ab.mpg.de",
@@ -137,8 +147,7 @@
       "lastName": "Tavakol",
       "email": "ntavakol@ab.mpg.de",
       "roles": [
-        "author",
-        "creator"
+        "author"
       ],
       "orcid": "0000-0003-3674-4784",
       "affiliation": "Max-Planck-Institute of Animal Behavior",

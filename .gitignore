@@ -7,4 +7,6 @@
 data/output/**
 !data/output/.keep
 tests/testthat/plot.png
+personal.env
+# large EGM2008 geoid file (428 MB): provided as a release asset, not committed
 data/auxiliary/user-files/provided-app-files/**

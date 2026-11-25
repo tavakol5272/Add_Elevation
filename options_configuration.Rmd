@@ -1,21 +1,36 @@
-#Only ground elevation, no height above ground:
+#Test configurations for app-configuration.json
+#Copy one block into app-configuration.json and run sdk.R.
+#Template test data: input2 has height_above_ellipsoid (with values), input3 has argos_altitude,
+#input4 has height_above_ellipsoid (only NA) and height_raw (text). Set SOURCE_FILE in .env accordingly.
+#Every run writes height_columns_overview.csv if possible height columns exist.
+
+
+########## Option 1: standard Movebank attribute from the list ##########
+
+#Only ground elevation, no height above ground
+#Expected: only ground.elevation is added; possible height columns are listed in the overview
 {
+  "height_selection": "select_height_attr_list",
   "height_attr_list": "no_selection",
   "height_attr_freetext": null,
   "height_type_freetext": "unknown",
   "height_props": null
 }
 
-#Standard MSL height
+#Standard MSL height (height_above_msl or height_above_mean_sea_level)
+#Expected: <column>.adapted = height - ground.elevation
 {
+  "height_selection": "select_height_attr_list",
   "height_attr_list": "height_above_msl_or_mean_sea_level",
   "height_attr_freetext": null,
   "height_type_freetext": "unknown",
   "height_props": null
 }
 
-#Standard ellipsoid height
+#Standard ellipsoid height (use input2)
+#Expected: egm08.geoid added; height_above_ellipsoid.adapted = height - egm08.geoid - ground.elevation
 {
+  "height_selection": "select_height_attr_list",
   "height_attr_list": "height_above_ellipsoid",
   "height_attr_freetext": null,
   "height_type_freetext": "unknown",
@@ -23,49 +38,161 @@
 }
 
 #Already height above ground
+#Expected: height_above_ground_level.adapted = height_above_ground_level
 {
+  "height_selection": "select_height_attr_list",
   "height_attr_list": "height_above_ground_level",
   "height_attr_freetext": null,
   "height_type_freetext": "unknown",
   "height_props": null
 }
 
-#Barometric height warning test
+#Standard column with only NA values (use input4)
+#Expected: not adapted, warning "contains no numeric values"
 {
-  "height_attr_list": "barometric_height",
+  "height_selection": "select_height_attr_list",
+  "height_attr_list": "height_above_ellipsoid",
   "height_attr_freetext": null,
   "height_type_freetext": "unknown",
   "height_props": null
 }
 
-#Raw height warning test
-{
-  "height_attr_list": "height_raw",
-  "height_attr_freetext": null,
-  "height_type_freetext": "unknown",
-  "height_props": null
-}
+
+########## Option 2: type the exact column name ##########
 
 #Custom column treated as MSL
+#Expected: altitude.adapted = altitude - ground.elevation (warning if the column does not exist)
 {
-  "height_attr_list": "other",
+  "height_selection": "type_height_attr_name",
+  "height_attr_list": "no_selection",
   "height_attr_freetext": "altitude",
   "height_type_freetext": "msl",
   "height_props": null
 }
 
-#Custom column treated as already ground level
+#Custom column treated as ellipsoid
+#Expected: egm08.geoid added; altitude.adapted = altitude - egm08.geoid - ground.elevation
 {
-  "height_attr_list": "other",
+  "height_selection": "type_height_attr_name",
+  "height_attr_list": "no_selection",
+  "height_attr_freetext": "altitude",
+  "height_type_freetext": "ellipsoid",
+  "height_props": null
+}
+
+#Custom column treated as already ground level
+#Expected: altitude.adapted = altitude
+{
+  "height_selection": "type_height_attr_name",
+  "height_attr_list": "no_selection",
   "height_attr_freetext": "altitude",
   "height_type_freetext": "ground_level",
   "height_props": null
 }
 
-#est threshold proportions
+#Custom column with unknown type
+#Expected: not adapted, warning to select the height type
 {
-  "height_attr_list": "height_above_msl_or_mean_sea_level",
+  "height_selection": "type_height_attr_name",
+  "height_attr_list": "no_selection",
+  "height_attr_freetext": "altitude",
+  "height_type_freetext": "unknown",
+  "height_props": null
+}
+
+#Standard Movebank name typed with unknown type (use input2)
+#Expected: the known type (ellipsoid) is used automatically
+{
+  "height_selection": "type_height_attr_name",
+  "height_attr_list": "no_selection",
+  "height_attr_freetext": "height_above_ellipsoid",
+  "height_type_freetext": "unknown",
+  "height_props": null
+}
+
+#Standard Movebank name typed with a WRONG type (use input2)
+#Expected: adapted as msl, but warning "The values look more like type 'ellipsoid' than 'msl'"
+{
+  "height_selection": "type_height_attr_name",
+  "height_attr_list": "no_selection",
+  "height_attr_freetext": "height_above_ellipsoid",
+  "height_type_freetext": "msl",
+  "height_props": null
+}
+
+#Barometric height warning test
+#Expected: not adapted, reason in log and overview (weather-dependent)
+{
+  "height_selection": "type_height_attr_name",
+  "height_attr_list": "no_selection",
+  "height_attr_freetext": "barometric_height",
+  "height_type_freetext": "unknown",
+  "height_props": null
+}
+
+#Raw height warning test (use input4)
+#Expected: not adapted, reason in log and overview (text, reference unknown)
+{
+  "height_selection": "type_height_attr_name",
+  "height_attr_list": "no_selection",
+  "height_attr_freetext": "height_raw",
+  "height_type_freetext": "unknown",
+  "height_props": null
+}
+
+#No column name given
+#Expected: not adapted, warning "no column name was provided"
+{
+  "height_selection": "type_height_attr_name",
+  "height_attr_list": "no_selection",
+  "height_attr_freetext": null,
+  "height_type_freetext": "msl",
+  "height_props": null
+}
+
+
+########## Option 3: all standard Movebank height attributes ##########
+
+#Calculate for all standard Movebank height attributes present
+#Expected: every standard column with values is adapted with its own type; barometric/raw are reported;
+#non-standard names are only listed in the overview with a suggested type
+{
+  "height_selection": "calculate_all_height_columns",
+  "height_attr_list": "no_selection",
+  "height_attr_freetext": null,
+  "height_type_freetext": "unknown",
+  "height_props": null
+}
+
+#Argos data, no standard height attribute (use input3)
+#Expected: no column adapted; argos_altitude listed as "ignored (not a measured height)"
+{
+  "height_selection": "calculate_all_height_columns",
+  "height_attr_list": "no_selection",
+  "height_attr_freetext": null,
+  "height_type_freetext": "unknown",
+  "height_props": null
+}
+
+
+########## Thresholds ##########
+
+#Test threshold proportions
+#Expected: additional file <column>.adapted_threshold_proportions.csv; histogram breaks at min, 0, thresholds, max
+{
+  "height_selection": "select_height_attr_list",
+  "height_attr_list": "height_above_ellipsoid",
   "height_attr_freetext": null,
   "height_type_freetext": "unknown",
   "height_props": "100,200,300,500"
+}
+
+#Invalid threshold entries
+#Expected: warning that some thresholds could not be read; only 100 and 300 are used
+{
+  "height_selection": "select_height_attr_list",
+  "height_attr_list": "height_above_ellipsoid",
+  "height_attr_freetext": null,
+  "height_type_freetext": "unknown",
+  "height_props": "100,abc,300"
 }

@@ -6,7 +6,8 @@
 .idea/
 data/output/**
 !data/output/.keep
-tests/testthat/plot.png
-personal.env
-# large EGM2008 geoid file (428 MB): provided as a release asset, not committed
-data/auxiliary/user-files/provided-app-files/**
+.cache/
+.config/
+.local/
+shiny_bookmarks/
+/data/auxiliary/user-files/provided-app-files/egm_file/us_nga_egm2008_1.tif

@@ -1,92 +1,6 @@
 {
   "version": "1.2",
-  "settings": [
-    {
-      "id": "height_selection",
-      "name": "Height/altitude column selection",
-      "description": "Select how the App should choose the height/altitude column(s) for which height above ground is calculated. For option 1 and 2 please fill out the corresponding fields in the settings below. Option 3 uses all standard Movebank height attributes present in the data (height above ellipsoid, height above mean sea level, height above ground level); the settings for option 1 and 2 are then ignored. For each adapted column a new column '<column name>.adapted' is added. Barometric and raw heights are not adapted.",
-      "defaultValue": "select_height_attr_list",
-      "type": "RADIOBUTTONS",
-      "options": [
-        {
-          "value": "select_height_attr_list",
-          "displayText": "1: Choose one standard Movebank height attribute from the list"
-        },
-        {
-          "value": "type_height_attr_name",
-          "displayText": "2: Type the exact height/altitude column name"
-        },
-        {
-          "value": "calculate_all_height_columns",
-          "displayText": "3: Calculate for all standard Movebank height attributes in the data"
-        }
-      ]
-    },
-    {
-      "id": "height_attr_list",
-      "name": "Option 1: Standard Movebank height attribute",
-      "description": "Only used for option 1. Select the standard Movebank height attribute for which height above ground is calculated.",
-      "type": "DROPDOWN",
-      "defaultValue": "no_selection",
-      "options": [
-        {
-          "value": "no_selection",
-          "displayText": "no selection"
-        },
-        {
-          "value": "height_above_ellipsoid",
-          "displayText": "height_above_ellipsoid"
-        },
-        {
-          "value": "height_above_msl_or_mean_sea_level",
-          "displayText": "height_above_mean_sea_level / height_above_msl"
-        },
-        {
-          "value": "height_above_ground_level",
-          "displayText": "height_above_ground_level"
-        }
-      ]
-    },
-    {
-      "id": "height_attr_freetext",
-      "name": "Option 2: Exact height/altitude column name",
-      "description": "Only used for option 2. Enter the column name exactly as it appears in the data set. The artefact height_columns_overview.csv lists the possible height columns of your data and, for non-standard names, a suggested height type.",
-      "defaultValue": null,
-      "type": "STRING"
-    },
-    {
-      "id": "height_type_freetext",
-      "name": "Option 2: Height reference type",
-      "description": "Only used for option 2. Defines how the values of the typed column are converted to height above ground. If 'unknown' is selected, the column is not adapted, unless it is a standard Movebank attribute with a known type.",
-      "type": "DROPDOWN",
-      "defaultValue": "unknown",
-      "options": [
-        {
-          "value": "unknown",
-          "displayText": "unknown / do not adapt"
-        },
-        {
-          "value": "msl",
-          "displayText": "height above mean sea level"
-        },
-        {
-          "value": "ellipsoid",
-          "displayText": "height above ellipsoid"
-        },
-        {
-          "value": "ground_level",
-          "displayText": "height above ground level"
-        }
-      ]
-    },
-    {
-      "id": "height_props",
-      "name": "Height thresholds for proportional use",
-      "description": "Optional. Heights above ground in metres for which the proportion of locations and of time below each height is calculated, separated by commas. Example: 100,200,300,500. If left empty, no proportions are calculated and the histograms use 50 regular bins.",
-      "defaultValue": null,
-      "type": "STRING"
-    }
-  ],
+  "settings": [],
   "providedAppFiles": [
     {
       "settingId": "egm_file",
@@ -96,10 +10,16 @@
   "dependencies": {
     "R": [
       {
+        "name": "shiny"
+      },
+      {
         "name": "move2"
       },
       {
         "name": "sf"
+      },
+      {
+        "name": "ggplot2"
       },
       {
         "name": "elevatr"
@@ -108,7 +28,10 @@
         "name": "terra"
       },
       {
-        "name": "ggplot2"
+        "name": "shinycssloaders"
+      },
+      {
+        "name": "zip"
       }
     ]
   },
@@ -118,6 +41,7 @@
   },
   "language": "eng",
   "keywords": [
+    "shiny",
     "ground elevation",
     "DEM",
     "Digital Elevation Model",

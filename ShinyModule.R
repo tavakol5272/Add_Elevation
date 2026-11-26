@@ -114,20 +114,39 @@ adapt_height <- function(h, type, ground, geoid) {
 
 ######################## helpers: column choices of the UI ########################
 
-# numeric columns with values that can be selected, in three groups
-column_choices <- function(data) {
+# All height columns of the data, detected ONCE from the data alone (independent of the user's
+# selection). The result is used everywhere: the dropdown groups, the "not usable" line under the
+# dropdown, the overview table and the message for data without height values.
+# - standard:   standard Movebank height columns with values that can be adapted
+# - possible:   columns whose name looks like a height, with values
+# - other:      all other numeric event attributes with values (selectable, not detected as heights)
+# - not_usable: detected height columns that cannot be adapted (named: reason; short: for the UI)
+detect_height_columns <- function(data) {
   df <- sf::st_drop_geometry(data)
-  not_selectable <- c(names(ignored_height_cols),
-                      names(known_height_types)[!known_height_types %in% adaptable_types],
-                      "ground.elevation", "egm08.geoid")
-  usable <- names(df)[vapply(names(df), function(cl) {
-    x <- df[[cl]]
-    is.numeric(x) && !inherits(x, c("POSIXt", "Date")) && has_numeric_values(x)
-  }, logical(1))]
-  usable   <- usable[!usable %in% not_selectable & !grepl("\\.adapted$", usable)]
+  nm <- names(df)[!names(df) %in% c("ground.elevation", "egm08.geoid") & !grepl("\\.adapted$", names(df))]
+  is_num   <- vapply(nm, function(cl) is.numeric(df[[cl]]) && !inherits(df[[cl]], c("POSIXt", "Date")), logical(1))
+  has_vals <- vapply(nm, function(cl) has_numeric_values(df[[cl]]), logical(1))
+  detected <- nm[nm %in% find_possible_height_cols(data)]
+
+  why <- vapply(detected, function(cl) {
+    type <- if (cl %in% names(known_height_types)) known_height_types[[cl]] else ""
+    if (cl %in% names(ignored_height_cols)) return(paste("Ignored.", ignored_height_cols[[cl]]))
+    if (!has_vals[[cl]])      return("Column contains no values.")
+    if (type == "barometric") return("Barometric heights are not adapted: they depend on the weather and can be off by tens of metres.")
+    if (type == "raw")        return("Raw heights are not adapted: they are text and their reference is not known.")
+    if (!is_num[[cl]])        return("Column is not numeric.")
+    NA_character_
+  }, character(1))
+  short <- c("Ignored." = "assumed by Argos, not measured", "Barometric" = "barometric", "Raw heights" = "raw",
+             "Column contains no values." = "no values", "Column is not numeric." = "not numeric")
+  not_usable <- why[!is.na(why)]
+  not_usable_short <- vapply(not_usable, function(r) unname(short[startsWith(r, names(short))][1]), character(1))
+
+  usable   <- nm[is_num & has_vals & !nm %in% names(not_usable)]
   standard <- intersect(names(known_height_types), usable)
-  possible <- setdiff(intersect(usable, find_possible_height_cols(data)), standard)
-  list(standard = standard, possible = possible, other = setdiff(usable, c(standard, possible)))
+  possible <- setdiff(intersect(usable, detected), standard)
+  list(standard = standard, possible = possible, other = setdiff(usable, c(standard, possible)),
+       not_usable = not_usable, not_usable_short = not_usable_short)
 }
 
 # input ID of the height type dropdown of a non-standard column
@@ -167,32 +186,105 @@ statistics_table <- function(h, track, dur) {
 }
 
 # histogram as ggplot object (NULL if there are no values)
-height_histogram <- function(x, title, xlab, thresholds) {
-  x <- x[is.finite(x)]
-  if (length(x) == 0) return(NULL)
-  brks <- if (!is.null(thresholds)) sort(unique(c(min(x), 0, thresholds, max(x)))) else NULL
-  hist_aes <- aes(y = after_stat(density) * ifelse(after_stat(x) < 0, -1, 1))  # negative heights drawn downwards
-  hist_geom <- if (length(brks) >= 2) {
-    geom_histogram(hist_aes, breaks = brks, color = "darkblue", fill = "skyblue")
-  } else {
-    geom_histogram(hist_aes, bins = 50, color = "darkblue", fill = "skyblue")
-  }
-  ggplot(data.frame(height = x), aes(x = height)) +
-    hist_geom +
-    geom_hline(yintercept = 0, color = "gray") +
-    geom_vline(xintercept = 0, linetype = "dashed", color = "black", linewidth = 1) +
-    scale_y_continuous(labels = abs) +
-    labs(title = title, x = xlab, y = "Density") +
-    theme_minimal()
+# histogram of the height above ground (the same plot in the UI and in the PDF):
+# - all negative values (below ground, i.e. errors) in ONE orange bar left of 0, labelled "below 0"
+#   instead of negative numbers, so that no height below ground can be read from the axis
+# - the values from 0 upwards in about 20 equal bins
+# - the share of the locations with a ground elevation below 0 (sea = TRUE, probably over the sea)
+#   in red inside the bars
+# - the thresholds as thin dashed lines
+# axis limit for outliers. q is the value below which the lowest 1 % of the negative values lie.
+# The axis is cut at q only if these 1 % stretch the axis more than twice as far as the other 99 %
+# (distance from 0 to q), i.e. only for real outliers: normal and exponential tails stay below this
+# (tested), so nothing is cut there. Used for the upper end of the axis, with -x.
+lower_axis_limit <- function(x) {
+  neg <- x[x < 0]
+  if (length(neg) < 2) return(NA_real_)
+  q <- unname(quantile(neg, 0.01))
+  if (q >= 0 || (q - min(x)) <= 2 * abs(q)) return(NA_real_)
+  q
 }
 
-write_histograms <- function(h, track, label, thresholds) {
+# notes = TRUE (PDF): the orange and red notes are written under the plot; the UI shows them as
+# text under the plot instead (notes = FALSE)
+height_histogram <- function(x, title, xlab, thresholds, sea = NULL, notes = TRUE) {
+  if (!is.null(sea)) sea <- sea[is.finite(x)]
+  x <- x[is.finite(x)]
+  if (length(x) == 0) return(NULL)
+  fmt <- function(v) format(round(v), big.mark = ",")
+  n_all <- length(x)
+  is_neg <- x < 0
+  caption <- NULL
+  if (notes && any(is_neg)) {
+    caption <- sprintf("Orange bar: all %s locations below ground (%.1f %%, lowest: %s m). These values are errors.",
+                       fmt(sum(is_neg)), 100 * mean(is_neg), fmt(min(x)))
+  }
+  if (notes && !is.null(sea) && any(sea, na.rm = TRUE)) {
+    caption <- c(caption, sprintf(paste0("Red: %s locations (%.1f %%) have a ground elevation below 0 m, probably over the sea. ",
+                                         "Their heights above ground are probably much too high."),
+                                  fmt(sum(sea, na.rm = TRUE)), 100 * mean(sea, na.rm = TRUE)))
+  }
+  # very high outliers are shown in the rightmost bar, so that they do not stretch the axis
+  hi <- -lower_axis_limit(-x)
+  if (!is.na(hi)) {
+    n_hi <- sum(x > hi)
+    caption <- c(caption, sprintf("%s location%s above %s m (highest: %s m) %s included in the rightmost bar.",
+                                  fmt(n_hi), if (n_hi == 1) "" else "s", fmt(hi), fmt(max(x)),
+                                  if (n_hi == 1) "is" else "are"))
+    x <- pmin(x, hi)
+  }
+  # each note on its own line(s), wrapped so that it fits the width of the plot
+  caption <- if (length(caption)) paste(unlist(lapply(caption, strwrap, width = 95)), collapse = "\n") else NULL
+
+  # about 20 equal bins from 0 to the highest value; one more bin of the same width left of 0 holds
+  # all negative values
+  top  <- max(x, 0)
+  w    <- if (top > 0) top / 20 else 1
+  brks <- seq(-w, (floor(top / w) + 1) * w, by = w)
+  x[is_neg] <- -w / 2
+  p <- ggplot(data.frame(height = x), aes(x = height)) +
+    geom_histogram(aes(y = after_stat(density), fill = after_stat(x) < 0, color = after_stat(x) < 0),
+                   breaks = brks, closed = "left") +
+    scale_fill_manual(values = c("FALSE" = "skyblue", "TRUE" = "orange"), guide = "none") +
+    scale_color_manual(values = c("FALSE" = "darkblue", "TRUE" = "darkorange3"), guide = "none")
+  if (!is.null(sea) && any(sea, na.rm = TRUE)) {
+    # same density scale as the whole histogram, so the red part is the share of each bar
+    p <- p + geom_histogram(data = data.frame(height = x[sea %in% TRUE]),
+                            aes(y = after_stat(count) / (n_all * after_stat(width))),
+                            breaks = brks, closed = "left", fill = "red", color = "darkred")
+  }
+  thr <- thresholds[thresholds > 0 & thresholds < top]
+  if (length(thr)) {
+    # vertical labels; a label is left out if it is too close to the previous one
+    lab <- thr[1]
+    for (t in thr[-1]) if (t - lab[length(lab)] >= 0.04 * (top + w)) lab <- c(lab, t)
+    p <- p +
+      geom_vline(xintercept = thr, linetype = "dashed", color = "gray40", linewidth = 0.4) +
+      annotate("text", x = lab, y = Inf, label = paste(lab, "m"), angle = 90, hjust = 1.1, vjust = -0.4,
+               size = 4, color = "gray30")
+  }
+  # x axis: only 0 and positive numbers
+  pos_breaks <- pretty(c(0, top))
+  pos_breaks <- pos_breaks[pos_breaks >= 0 & pos_breaks <= top + w]
+  p +
+    geom_hline(yintercept = 0, color = "gray") +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "black", linewidth = 1) +
+    scale_x_continuous(breaks = pos_breaks, labels = format(pos_breaks, big.mark = ",", scientific = FALSE, trim = TRUE)) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+    labs(title = title, x = xlab, y = "Density", caption = caption) +
+    theme_minimal() +
+    theme(text = element_text(size = 16),
+          plot.caption = element_text(color = "gray20", hjust = 0, size = 13))
+}
+
+write_histograms <- function(h, track, label, thresholds, sea) {
   file <- paste0(label, "_histograms.pdf")
-  pdf(appArtifactPath(file), width = 12, height = 8)
+  pdf(appArtifactPath(file), width = 10, height = 6.5)
   on.exit(dev.off())
   for (id in c(NA, unique(track))) {
     title <- if (is.na(id)) "Histogram of all tracks" else paste("Histogram of", id)
-    p <- height_histogram(if (is.na(id)) h else h[track == id], title, label, thresholds)
+    p <- if (is.na(id)) height_histogram(h, title, label, thresholds, sea)
+         else height_histogram(h[track == id], title, label, thresholds, sea[track == id])
     if (is.null(p)) logger.info(paste0("No height values for ", title, ", so no histogram was drawn."))
     else print(p)
   }
@@ -226,14 +318,38 @@ threshold_table <- function(h, track, dur, thresholds) {
   prop_table
 }
 
+# short version of the threshold table for the UI only (one row per threshold, for one track or
+# the mean +- sd across tracks); the artefact keeps the full table
+threshold_summary <- function(tab, track_id) {
+  thr  <- sub("^n\\.loc_", "", names(tab)[startsWith(names(tab), "n.loc_")])
+  pct  <- function(x) ifelse(is.na(x), "NA", sprintf("%.1f %%", 100 * x))
+  pm   <- function(m, s) ifelse(is.na(m), "NA",
+                                ifelse(is.na(s), sprintf("%.1f %%", 100 * m),
+                                       sprintf("%.1f ± %.1f %%", 100 * m, 100 * s)))
+  out  <- data.frame(Threshold = sub("m$", " m", thr), check.names = FALSE)
+  if (track_id == "all") {
+    m <- tab[tab$track == "mean", ]
+    s <- tab[tab$track == "sd", ]
+    out[["% of locations (mean ± sd)"]] <- pm(unlist(m[paste0("prop.locs_", thr)]), unlist(s[paste0("prop.locs_", thr)]))
+    out[["% of time (mean ± sd)"]]      <- pm(unlist(m[paste0("prop.dur_", thr)]),  unlist(s[paste0("prop.dur_", thr)]))
+  } else {
+    r <- tab[tab$track == track_id, ]
+    out[["Locations below"]] <- as.integer(unlist(r[paste0("n.loc_", thr)]))
+    out[["% of locations"]]  <- pct(unlist(r[paste0("prop.locs_", thr)]))
+    out[["% of time"]]       <- pct(unlist(r[paste0("prop.dur_", thr)]))
+  }
+  out
+}
+
 write_csv_artefact <- function(table, file) {
   write.csv(table, appArtifactPath(file), row.names = FALSE)
   logger.info(paste0("The file ", file, " was created."))
   file
 }
 
-# one row per possible height column: what happened to it and, for other names, a suggested type
-height_overview <- function(data, cand, adapted, reasons, track, ground, geoid, speed) {
+# one row per detected height column (see detect_height_columns) plus one row per selected column
+# that was not detected (extra): what happened to it and, for other names, a suggested type
+height_overview <- function(data, cand, extra, not_usable, adapted, reasons, track, ground, geoid, speed) {
   rows <- lapply(cand, function(cl) {
     h        <- to_num(data[[cl]])
     standard <- cl %in% names(known_height_types)
@@ -241,14 +357,18 @@ height_overview <- function(data, cand, adapted, reasons, track, ground, geoid, 
     status   <- if (cl %in% names(adapted)) "height above ground calculated"
                 else if (cl %in% names(ignored_height_cols)) "ignored (not a measured height)"
                 else "height above ground not calculated"
-    note     <- if (cl %in% names(adapted)) paste0("New column: ", cl, ".adapted")
-                else if (cl %in% names(ignored_height_cols)) paste("Ignored.", ignored_height_cols[[cl]])
-                else if (cl %in% names(reasons)) reasons[[cl]]
+    note     <- if (cl %in% names(adapted)) paste0("New column: ", cl, ".adapted",
+                                                   if (cl %in% extra) ". Not detected as a height column; adapted because it was selected." else "")
+                else if (cl %in% names(not_usable)) not_usable[[cl]]
+                else if (cl %in% names(reasons)) paste0(reasons[[cl]], if (cl %in% extra) " Not detected as a height column; listed because it was selected." else "")
                 else "Not selected."
 
     sugg <- list(type = NA_character_, confidence = "", note = "")
     advice <- ""
-    if (!standard && !cl %in% names(ignored_height_cols) && length(vals) > 0) {
+    if (cl %in% extra) {
+      # not detected as a height column: no type suggestion (it would be meaningless for e.g. temperature)
+      advice <- "Not detected as a height column. Please check the tag documentation."
+    } else if (!standard && !cl %in% names(not_usable) && length(vals) > 0) {
       sugg <- suggest_type(cl, h, ground, geoid, speed)
       advice <- if (cl %in% names(adapted)) {
         if (!is.na(sugg$type) && sugg$type != adapted[[cl]] && sugg$confidence == "high") {
@@ -294,12 +414,16 @@ height_overview <- function(data, cand, adapted, reasons, track, ground, geoid, 
 ######################## calculation (same steps as rFunction of the R version) ########################
 
 # base: ground elevation, tracks, time lags; geoid() and speed() are looked up only when needed
-adapt_all <- function(data, base, geoid_fun, speed_fun, cols, thresholds) {
+adapt_all <- function(data, detected, base, geoid_fun, speed_fun, cols, thresholds) {
   ground <- base$ground
   track  <- base$track
+
+  # overview rows: the detected height columns (in data order) and the selected, not detected ones
+  found <- c(detected$standard, detected$possible, names(detected$not_usable))
+  cand  <- names(data)[names(data) %in% found]
+  extra <- setdiff(cols$col, cand)
   data$ground.elevation <- ground
 
-  cand <- find_possible_height_cols(data)
   reasons <- vapply(seq_len(nrow(cols)), function(i) why_not_adaptable(data, cols$col[i], cols$type[i]), character(1))
   names(reasons) <- cols$col
   for (cl in names(reasons)[!is.na(reasons)]) {
@@ -308,8 +432,8 @@ adapt_all <- function(data, base, geoid_fun, speed_fun, cols, thresholds) {
   reasons <- reasons[!is.na(reasons)]
   cols    <- cols[!cols$col %in% names(reasons), , drop = FALSE]
 
-  others_with_values <- cand[!cand %in% c(names(known_height_types), names(ignored_height_cols))]
-  others_with_values <- others_with_values[vapply(others_with_values, function(cl) has_numeric_values(data[[cl]]), logical(1))]
+  # non-standard columns with values in the overview: they get a type suggestion (needs geoid and speed)
+  others_with_values <- detected$possible
   geoid <- rep(NA_real_, nrow(data))
   if (any(cols$type == "ellipsoid") || length(others_with_values) > 0) geoid <- geoid_fun()
   if (any(cols$type == "ellipsoid")) {
@@ -343,7 +467,7 @@ adapt_all <- function(data, base, geoid_fun, speed_fun, cols, thresholds) {
     }
 
     files <- c(files, write_csv_artefact(statistics_table(h_adapted, track, timelag), paste0(new_col, "_statistics.csv")))
-    files <- c(files, write_histograms(h_adapted, track, new_col, thresholds))
+    files <- c(files, write_histograms(h_adapted, track, new_col, thresholds, ground < 0))
     thr_table <- NULL
     if (!is.null(thresholds)) {
       thr_table <- threshold_table(h_adapted, track, timelag, thresholds)
@@ -353,9 +477,10 @@ adapt_all <- function(data, base, geoid_fun, speed_fun, cols, thresholds) {
   }
   if (length(adapted) == 0) logger.info("No height/altitude column was adapted. Only ground.elevation was added.")
 
+  cand <- c(cand, intersect(extra, names(data)))
   if (length(cand) > 0) {
     speed <- if (length(others_with_values) > 0) speed_fun() else rep(NA_real_, nrow(data))
-    overview <- height_overview(data, cand, adapted, reasons, track, ground, geoid, speed)
+    overview <- height_overview(data, cand, extra, detected$not_usable, adapted, reasons, track, ground, geoid, speed)
     files <- c(files, write_csv_artefact(overview, "height_columns_overview.csv"))
     logger.info("height_columns_overview.csv lists all possible height columns, what was done with them and, for non-standard names, a suggested height type.")
   } else {
@@ -375,14 +500,17 @@ shinyModuleUserInterface <- function(id, label) {
       sidebarPanel(width = 3,
         h4("Height columns"),
         uiOutput(ns("column_ui")),
+        uiOutput(ns("not_usable_ui")),
         hr(),
         h4("Height type per column"),
         uiOutput(ns("standard_types")),
         uiOutput(ns("type_ui")),
         hr(),
-        h4("Thresholds"),
-        textInput(ns("height_props"), "Height thresholds above ground (m), separated by commas",
-                  value = "50,100,200,300,500"),
+        h4("Thresholds for proportions"),
+        textInput(ns("height_props"), "Heights above ground (m), separated by commas",
+                  value = "100,200,300,400,500"),
+        helpText("Used only for the table and the dashed lines in the histogram.",
+                 "They do not change the calculated heights above ground."),
         actionButton(ns("apply"), "Calculate", class = "btn-primary btn-block"),
         uiOutput(ns("messages")),
         hr(),
@@ -390,11 +518,15 @@ shinyModuleUserInterface <- function(id, label) {
         downloadButton(ns("download_zip"), "Download results (zip)", class = "btn-sm")
       ),
       mainPanel(width = 9,
+        uiOutput(ns("main_warning")),
         fluidRow(column(6, uiOutput(ns("hist_col_ui"))),
-                 column(6, uiOutput(ns("hist_track_ui")))),
-        shinycssloaders::withSpinner(plotOutput(ns("histogram"), height = "55vh")),
-        h4("Proportion of locations and of time below each threshold"),
-        tableOutput(ns("threshold_table"))
+                 column(6, uiOutput(ns("hist_track_ui"))), style = "margin-bottom: 20px;"),
+        shinycssloaders::withSpinner(plotOutput(ns("histogram"), height = "42vh")),
+        uiOutput(ns("negative_note")),
+        div(style = "margin-top: 30px;", uiOutput(ns("table_title"))),
+        tableOutput(ns("threshold_table")),
+        helpText("% of time = share of the tracking time spent below the threshold.",
+                 "The full tables per track are in the download.")
       )
     )
   )
@@ -411,9 +543,22 @@ shinyModule <- function(input, output, session, data) {
     return(reactive(NULL))
   }
 
-  choices  <- column_choices(data)
+  choices  <- detect_height_columns(data)   # detected once, used everywhere
   standard <- choices$standard
   others   <- c(choices$possible, choices$other)
+
+  # default selection when the App is opened without stored settings: the most probable height
+  # column. First a standard column (ellipsoid = the GPS height itself, then sea level, then ground
+  # level); if there is none, the possible height column (by name) with the most values
+  default_col <- {
+    pri <- intersect(c("height_above_ellipsoid", "height_above_msl", "height_above_mean_sea_level",
+                       "height_above_ground_level"), standard)
+    if (length(pri)) pri[1]
+    else if (length(choices$possible)) {
+      n_vals <- vapply(choices$possible, function(cl) sum(is.finite(to_num(data[[cl]]))), numeric(1))
+      choices$possible[which.max(n_vals)]
+    } else character(0)
+  }
 
   #### ground elevation, tracks and time lags: looked up once
   base <- reactive({
@@ -453,16 +598,27 @@ shinyModule <- function(input, output, session, data) {
 
   #### sidebar: column selection and height types
   output$column_ui <- renderUI({
-    grouped <- list()
-    if (length(standard))         grouped[["Standard Movebank height attributes"]] <- as.list(standard)
-    if (length(choices$possible)) grouped[["Possible height columns (by name)"]]  <- as.list(choices$possible)
-    if (length(choices$other))    grouped[["Other numeric columns"]]             <- as.list(choices$other)
+    # every group is shown; an empty group gets a "(none in this dataset)" line, which is ignored
+    group <- function(cols, id) if (length(cols)) as.list(cols) else setNames(list(id), "(none in this dataset)")
+    grouped <- list(
+      "Standard Movebank height attributes" = group(standard, "none_standard"),
+      "Possible height columns (by name)"   = group(choices$possible, "none_possible"),
+      "Other event attributes"              = group(choices$other, "none_other")
+    )
     tagList(
       selectInput(ns("height_cols"), "Columns for which height above ground is calculated",
-                  choices = grouped, selected = standard, multiple = TRUE),
+                  choices = grouped, selected = default_col, multiple = TRUE),
       # set once the column selection exists, so the calculation waits for it
       div(style = "display: none;", textInput(ns("ui_ready"), NULL, value = "yes"))
     )
+  })
+
+  # detected height columns that cannot be adapted (also listed in the overview table)
+  output$not_usable_ui <- renderUI({
+    nu <- choices$not_usable_short
+    if (length(nu) == 0) return(NULL)
+    p(style = "color: gray; font-size: 90%;",
+      "Not usable: ", paste0(names(nu), " (", nu, ")", collapse = ", "))
   })
 
   output$standard_types <- renderUI({
@@ -483,12 +639,20 @@ shinyModule <- function(input, output, session, data) {
                     selected = "unknown"),
         uiOutput(ns(paste0("sugg_", type_input_id(cl))))
       )
-    }))
+    }),
+    # set once the type dropdowns exist, so the first calculation waits for them
+    div(style = "display: none;", textInput(ns("types_ready"), NULL, value = "yes")))
   })
 
   # suggested type under each dropdown (only calculated when the dropdown is shown)
   lapply(others, function(cl) {
     output[[paste0("sugg_", type_input_id(cl))]] <- renderUI({
+      # no suggestion for columns not detected as heights: for other values (e.g. temperature) it
+      # would be meaningless
+      if (cl %in% choices$other) {
+        return(p(style = "color: #8a6d3b; font-size: 90%;",
+                 "Not detected as a height column. Please check the tag documentation."))
+      }
       s <- suggest_type(cl, to_num(data[[cl]]), base()$ground, geoid(), speed())
       txt <- if (is.na(s$type) || !s$type %in% adaptable_types) "No reliable type suggestion. Please check the tag documentation."
              else paste0("Suggested: ", s$type, if (s$confidence != "high") " (uncertain)" else "",
@@ -499,8 +663,8 @@ shinyModule <- function(input, output, session, data) {
 
   #### settings used for the calculation
   current_settings <- reactive({
-    req(input$ui_ready)
-    sel  <- input$height_cols
+    req(input$ui_ready, input$types_ready)
+    sel  <- intersect(input$height_cols, names(data))   # drops the "(none in this dataset)" lines
     sel  <- c(intersect(names(known_height_types), sel), setdiff(intersect(names(data), sel), names(known_height_types)))
     type <- vapply(sel, function(cl) {
       if (cl %in% names(known_height_types)) return(unname(known_height_types[cl]))
@@ -510,10 +674,24 @@ shinyModule <- function(input, output, session, data) {
     list(cols = data.frame(col = sel, type = unname(type)), thresholds = parse_thresholds(input$height_props))
   })
 
-  # results follow the settings until "Calculate" is clicked the first time, then only on click
+  # one calculation at the start with the stored (or default) settings, so that the next App always
+  # gets the data; after that, changes in the sidebar are only calculated when "Calculate" is clicked
+  start_settings <- reactiveVal(NULL)
+  observe({
+    s <- current_settings()
+    if (is.null(isolate(start_settings()))) start_settings(s)
+  })
+  # The start calculation uses what the sidebar shows (defaults or stored settings). Only clicks made
+  # after the App was opened count: "Store settings" also stores the click counter of the button,
+  # so it can start with a value > 0
+  apply_start <- reactiveVal(NULL)
+  observeEvent(input$apply, apply_start(as.numeric(input$apply)), once = TRUE)
   active_settings <- reactive({
-    if (input$apply == 0) return(current_settings())
-    input$apply
+    req(!is.null(apply_start()))
+    if (as.numeric(input$apply) == apply_start()) {
+      req(start_settings())
+      return(start_settings())
+    }
     isolate(current_settings())
   })
 
@@ -521,18 +699,31 @@ shinyModule <- function(input, output, session, data) {
 
   result <- reactive({
     s <- active_settings()
-    res <- adapt_all(data, base(), geoid, speed, s$cols, s$thresholds)
+    res <- adapt_all(data, choices, base(), geoid, speed, s$cols, s$thresholds)
     old <- isolate(written())
     unlink(vapply(setdiff(old, res$files), appArtifactPath, character(1)))   # files of an earlier calculation
     written(res$files)
     res
   })
 
-  output$messages <- renderUI({
+  # warning at the top of the main panel for selected columns that were not converted
+  output$main_warning <- renderUI({
     r <- result()
     if (length(r$reasons) == 0) return(NULL)
-    div(style = "color: #a94442; margin-top: 8px;",
-        lapply(names(r$reasons), function(cl) p(strong(cl), ": not adapted. ", r$reasons[[cl]])))
+    div(style = "color: #a94442; font-weight: bold; margin-bottom: 10px;",
+        lapply(names(r$reasons), function(cl) {
+          unknown <- startsWith(r$reasons[[cl]], "Height type is unknown")
+          p("⚠ ", cl, " was not converted: ",
+            if (unknown && cl %in% choices$other) "its height type is unknown. Set the type (e.g. from the tag documentation) and click 'Calculate'."
+            else if (unknown) "its height type is unknown. Check the suggestion under its type in the sidebar, set the type and click 'Calculate'."
+            else r$reasons[[cl]])
+        }))
+  })
+
+  output$messages <- renderUI({
+    # columns that were not converted are shown in the main panel (main_warning)
+    if (identical(current_settings(), active_settings())) return(NULL)
+    p(style = "color: #8a6d3b; margin-top: 8px;", "Settings changed. Click 'Calculate' to update the results.")
   })
 
   #### main panel: histogram and threshold table
@@ -540,7 +731,24 @@ shinyModule <- function(input, output, session, data) {
 
   output$hist_col_ui <- renderUI({
     cols <- adapted_cols()
-    if (length(cols) == 0) return(p("No column was adapted. Select height columns and their type in the sidebar."))
+    if (length(cols) == 0) {
+      if (length(standard) + length(choices$possible) == 0) {
+        # no usable height column in the data (the same detection as in the dropdown and the overview)
+        nu <- choices$not_usable_short
+        all_empty <- length(nu) > 0 && all(nu == "no values")
+        listed <- if (length(nu) > 1) paste(paste(head(names(nu), -1), collapse = ", "), "and", tail(names(nu), 1)) else names(nu)
+        return(p(style = "font-weight: bold; font-size: 120%;",
+                 if (all_empty) paste0("This dataset has no height values (", listed,
+                                       if (length(nu) == 1) " is" else " are", " empty).")
+                 else if (length(nu)) paste0("This dataset has no usable height column (", listed,
+                                             if (length(nu) == 1) " is" else " are", " not usable, see the sidebar).")
+                 else "This dataset has no height columns.",
+                 br(),
+                 "Only the ground elevation was added to the data."))
+      }
+      if (length(result()$reasons)) return(NULL)   # the warning above already explains it
+      return(p("No column was adapted. Select height columns and their type in the sidebar."))
+    }
     selectInput(ns("hist_col"), "Column", choices = cols, selected = cols[1])
   })
 
@@ -553,23 +761,59 @@ shinyModule <- function(input, output, session, data) {
     r <- result()
     req(input$hist_col %in% adapted_cols(), input$hist_track)
     h <- r$data[[input$hist_col]]
+    sea <- base()$ground < 0
     all_tracks <- input$hist_track == "all"
-    if (!all_tracks) h <- h[base()$track == input$hist_track]
+    if (!all_tracks) {
+      h   <- h[base()$track == input$hist_track]
+      sea <- sea[base()$track == input$hist_track]
+    }
     title <- if (all_tracks) "Histogram of all tracks" else paste("Histogram of", input$hist_track)
-    p <- height_histogram(h, title, input$hist_col, r$thresholds)
+    p <- height_histogram(h, title, input$hist_col, r$thresholds, sea = sea, notes = FALSE)   # the UI shows these notes under the plot
     validate(need(!is.null(p), "No height values for this selection."))
     p
   })
 
+  # share of locations below ground for the shown column and track
+  output$negative_note <- renderUI({
+    r <- result()
+    req(input$hist_col %in% adapted_cols(), input$hist_track)
+    h <- r$data[[input$hist_col]]
+    ground <- base()$ground
+    if (input$hist_track != "all") {
+      keep <- base()$track == input$hist_track
+      h <- h[keep]
+      ground <- ground[keep]
+    }
+    ok <- is.finite(h)
+    h <- h[ok]
+    ground <- ground[ok]
+    if (length(h) == 0) return(NULL)
+    below_ground <- if (any(h < 0)) {
+      p(style = "color: #b35900;",
+        "⚠ ", strong(sprintf("%.1f %% of the locations", 100 * mean(h < 0))), " are below ground (orange). ",
+        "These values are errors, caused by the GPS height error or the coarse ground elevation (3-5 km cells).")
+    }
+    over_sea <- if (any(ground < 0, na.rm = TRUE)) {
+      p(style = "color: #c00000;",
+        "⚠ ", strong(sprintf("%.1f %% of the locations", 100 * mean(ground < 0, na.rm = TRUE))),
+        " (red) have a ground elevation below 0 m, probably over the sea. ",
+        "Their heights above ground are probably much too high.")
+    }
+    tagList(below_ground, over_sea)
+  })
+
+  output$table_title <- renderUI({
+    req(input$hist_col %in% adapted_cols(), input$hist_track)
+    h4("Below each height threshold: ",
+       if (input$hist_track == "all") "all tracks" else input$hist_track)
+  })
+
   output$threshold_table <- renderTable({
     r <- result()
-    req(input$hist_col %in% adapted_cols())
+    req(input$hist_col %in% adapted_cols(), input$hist_track)
     validate(need(!is.null(r$thresholds), "No thresholds were given."))
-    tab <- r$tables[[input$hist_col]]
-    is_n <- startsWith(names(tab), "n.loc")
-    tab[is_n] <- lapply(tab[is_n], as.integer)
-    tab
-  }, digits = 3, na = "NA")
+    threshold_summary(r$tables[[input$hist_col]], input$hist_track)
+  }, align = "l", na = "NA")
 
   #### download of all artefacts as one zip file
   output$download_zip <- downloadHandler(

@@ -1,105 +1,103 @@
-# Name of App *(Give your app a short and informative title. Please adhere to our convention of Title Case without hyphens (e.g. My New App))*
+# Add Elevation and Height Above Ground
 
 MoveApps
 
-Github repository: *github.com/yourAccount/Name-of-App* *(provide the link to the repository where the code of the App can be found)*
-
-*(Note: all text in italics are instructions for filling out this template. Please replace or delete them before publishing your App.)*
-
-*(Optional, but very helpful for Users: add here a screenshot or example figure of a typical result of the App, e.g. a plot, a map or a table. Save the image in the repository (e.g. in a folder `documentation/`) and include it with:*
-<p align="center">
-  <img alt="Screenshot of the Apps UI" src="documentation/screenshot_UI.png" width="600">
-</p>
-*)*
+Github repository: https://github.com/movestore/Add_Elevation
 
 ## Description
-*Enter here the short description of the App that might also be used when filling out the description during App submission to MoveApps. This text is directly presented to Users that look through the list of Apps when compiling Workflows.*
+Adds ground elevation to each location and converts recorded heights into height above ground, accounting for different height reference systems. Users can interactively select height columns, specify their height types, visualize height distributions, and calculate the proportions of locations and time below user-defined height thresholds.
 
 ## Documentation
-*Enter here a detailed description of your App. What is it intended to be used for. Which steps of analyses are performed and how. Please be explicit about any detail that is important for use and understanding of the App and its outcomes. You might also refer to the sections below.*
+The App looks up the elevation of the ground at every location and then converts the height recorded by the tag into height above ground. Tags record height in different ways: relative to sea level, relative to the reference shape of the Earth used by satellite positioning, or already as height above the ground. The App takes the height type into account.
+
+The App finds the columns of the data that contain heights and offers them for selection. The user can also select other columns, e.g. a height column with an unusual name. For columns that are not standard Movebank height columns, the user sets the height type; for columns whose name looks like a height, the App suggests a height type, which the user should check before using it. Each converted column results in its own new column, so that heights from different sources stay separate and identifiable.
+
+When the App is opened, it calculates once with the stored settings (or the default settings). After that, changes are only calculated when the user clicks `Calculate`. The screen shows a histogram of the height above ground and a table with the proportion of locations and of time below chosen heights, for all tracks together or for one track. Values below ground and values that are probably over the sea are marked, because they are errors. All results can be downloaded.
+
+**Be aware that height values collected by tags can be prone to large errors, which result in unrealistic height above ground values.**
 
 ### Application scope
 #### Generality of App usability
-*State here if the App was developed for a specific species, taxon or taxonomic group, or to answer a specific question. How might it influence the scope and utility of the App. This information will help the user to understand why the App might be producing no or odd results.*
-
-*Examples:*
-
-This App was developed for any taxonomic group. 
-
-This App was developed using data of birds. 
-
-This App was developed using data of red deer. 
-
-This App was developed to identify kill sites, but can probably be used to identify any kind of location clusters like nests, dens or drinking holes.
+This App was developed for any taxonomic group. It was tested with data of birds.
 
 #### Required data properties
-*State here the required and/or optimal data properties for this App to perform properly.*
+The App should work for any kind of location data. Height above ground can only be calculated if the data contain a height column with numeric values.
 
-*Examples:*
+Height above ground is not meaningful for locations over the sea, because there the elevation data contain the depth of the sea floor instead of the water surface. Over lakes, the elevation data give the water surface.
 
-This App is only applicable to data that reflect range resident behavior. 
-
-The data should have a fix rate of at least 1 location per 30 minutes. 
-
-The App should work for any kind of (location) data.
+Suggesting the height type requires locations with slow movement (see Technical details).
 
 ### Input type
-*Indicate which type of input data the App requires.*
-
-*Example:* `move2::move2_loc`
+`move2::move2_loc`
 
 ### Output type
-*Indicate which type of output data the App produces to be passed on to subsequent Apps.*
-
-*Example:* `move2::move2_loc`
+`move2::move2_loc`
 
 ### Artefacts
-*If the App creates artefacts (e.g. csv, pdf, jpeg, shapefiles, etc), please list them here and describe each.*
+The following files can be downloaded optionally (to disk):
 
-*Example:* `rest_overview.csv`: csv-file with Table of all rest site properties
+`Add_Elevation_results_<date>.zip`: by clicking the `Download results (zip)` button. Contains all files listed below, from the last calculation.
 
-### Settings 
-*Please list and define all settings that the App requires to be set by the App user, if necessary including their unit. Please state each of the settings that the user will encounter in the UI of the shiny app. Please also state the default value, if there is one.*
+The following files are saved with every Workflow run and updated with every calculation. The first three are created for every converted height column; `<column>` stands for the name of the original height column (e.g. `height_above_ellipsoid`). All heights are in metres.
 
-*Example:* `Radius of resting site` (radius): Defined radius the animal has to stay in for a given duration of time for it to be considered resting site. Unit: `metres`.
+`<column>.adapted_statistics.csv`: one row per track and one row for all tracks together (`all`), with the number of locations with a height above ground (`n.pts`), the mean and standard deviation of the height above ground over all locations (`mean.pts.height.above.ground`, `sd.pts.height.above.ground`) and weighted by time (`mean.dur.height.above.ground`, `sd.dur.height.above.ground`).
 
-*Always include the "Store settings" and the "Restore default settings" here as it will appear automatically in all shiny apps*       
-`Store settings`: click to store the current settings of the App for future Workflow runs.     
-`Restore default settings`: click to restore to the default setting values of the App.
+`<column>.adapted_histograms.pdf`: the histogram shown in the App, first for all tracks together and then for each track. A note under each histogram gives the number of locations below ground, probably over the sea and in the rightmost bar (see Settings, `Column` and `Track`).
+
+`<column>.adapted_threshold_proportions.csv`: only created if height thresholds are provided. One row per track, followed by the `mean` and the standard deviation (`sd`) across tracks. For every threshold (e.g. `100m`) there are three columns: the number of locations below the threshold (`n.loc_100m`), the proportion of locations below it (`prop.locs_100m`) and the proportion of time below it (`prop.dur_100m`).
+
+`height_columns_overview.csv`: one row per column the App found as a possible height column, plus one row per selected column that was not found as a height column. Columns: the column name (`column`), whether it is a standard Movebank height column (`standard_movebank_name`), what was done with it (`status`), the height type used (`type_used`), an explanation (`note`), the number of tracks with values (`n_tracks_with_values`), the minimum, median and maximum value, and, for columns whose name looks like a height, the suggested height type (`suggested_type`), the evidence for it (`suggestion_basis`) and what to do next (`advice`).
+
+### Settings
+**Sidebar**
+
+`Columns for which height above ground is calculated` (height_cols): one or more columns, in three groups: `Standard Movebank height attributes`, `Possible height columns (by name)` and `Other event attributes` (all other numeric columns). Only columns with numeric values are offered; an empty group shows `(none in this dataset)`. Columns found as height columns that cannot be converted are listed in grey under the selection with the reason (e.g. barometric, no values). Default: the most probable height column: `height_above_ellipsoid`, else `height_above_msl` / `height_above_mean_sea_level`, else `height_above_ground_level`, else the possible height column with the most values.
+
+`Height type per column` (type_<column>): for each selected column that is not a standard Movebank height column, the height type. Options: `unknown / do not adapt`, `height above mean sea level`, `height above ellipsoid`, `height above ground level`. For columns from `Possible height columns (by name)` a suggested height type is shown under the selection. Standard Movebank height columns have a fixed height type, which is shown as text. Default: `unknown / do not adapt` (the column is not converted).
+
+`Heights above ground (m), separated by commas` (height_props), under `Thresholds for proportions`: heights above ground for the threshold proportions and the dashed lines in the histogram. They do not change the calculated heights above ground. Unit: `metres`. Default: `100,200,300,400,500`.
+
+`Calculate` (apply): calculates with the current settings of the sidebar.
+
+**Main panel**
+
+`Column` (hist_col) and `Track` (hist_track): the converted column and the track (or `All tracks`) shown in the histogram and in the table below it. They change only what is shown, not the calculation. Default: the first converted column, `All tracks`.
 
 ### Changes in output data
-*Specify here how and if the App modifies the input data. Describe clearly what e.g. each additional column means.*
+The App adds to the input data:
 
-*Examples:*
+- `ground.elevation`: elevation of the ground at the location, in metres above mean sea level. Always added.
+- `egm08.geoid`: geoid height, i.e. the height of mean sea level above the reference shape of the Earth used by satellite positioning, in metres. Only added if a height above ellipsoid is converted.
+- `<column>.adapted`: height above ground calculated from the height column `<column>`, in metres, e.g. `height_above_ellipsoid.adapted`. One column per converted height column.
 
-The App adds to the input data the columns `Max_dist` and `Avg_dist`. They contain the maximum distance to the provided focal location and the average distance to it over all locations. 
-
-The App filters the input data as selected by the user. 
-
-The output data is the outcome of the model applied to the input data. 
-
-The input data remains unchanged.
+All other columns, the locations and the projection of the input data remain unchanged.
 
 ### Errors and null handling
-*Please describe here the most common errors of the App: how they occur and the best ways of solving them. You can also indicate for settings, as well as for the input data, which behaviour the App is supposed to show in case of errors or NULL values/input, including possible errors that can happen if settings/parameters are improperly set. Add here also any other important information that you find the User should be aware of.*
+**Input data:** If the input data are NULL or contain no locations, the App returns NULL.
 
-*Examples:*
+**No usable height column:** If the data contain no height column with values, the App says so on the screen and returns the data with only `ground.elevation` added.
 
-**Setting `radius`:** If no radius AND no duration are given, the input data set is returned with a warning. If no radius is given (NULL), but a duration is defined then a default radius of 1000m = 1km is set. 
+**Column not converted:** If a selected column has the height type `unknown / do not adapt` or contains no numeric values, a warning at the top of the main panel names it and the reason; the other selected columns are converted.
 
-**Input data:** If the input data contain fewer than 3 locations per track, the App stops with an error message stating which tracks are affected.
+**Heights not converted on purpose:** `barometric_height` is not converted, because heights estimated from air pressure change with the weather and can be wrong by tens of metres. `height_raw` is not converted, because it is stored as text and its reference is not known. `argos_altitude` is ignored, because it is the altitude assumed by the Argos system to calculate the location, not a measured height.
 
-**Common error:** If the App is used on data with a very low fix rate, no resting sites are found and the App returns an empty data set. Adapt the settings `radius` and `duration` to the resolution of your data.
+**Columns not found as height columns:** Columns from `Other event attributes` get no suggested height type, because the suggestion would be meaningless for values that are not heights (e.g. temperature). Check the tag documentation before converting such a column.
+
+**Possibly wrong height type:** If the values of a converted column clearly fit another height type better than the selected one, a warning is written to the log and to `height_columns_overview.csv`. Confirm the height type (e.g. in the tag documentation) and calculate again if needed.
+
+**Tracks without heights:** Tracks without values in the converted column are named in the log. Their values in the artefacts are NA, and the `mean` and `sd` rows are calculated from the other tracks.
+
+**Setting `height_props`:** Entries that are not numbers are ignored with a warning. Without valid thresholds, no threshold proportions are calculated.
+
+**Unrealistic heights:** Heights below ground are errors of the height recorded by the tag or of the coarse ground elevation (see Technical details); they are shown in one orange bar. Locations with a ground elevation below 0 m are probably over the sea, where the heights above ground are much too high; they are shown in red. A note under the histogram gives their share.
 
 ### Technical details
-*Optional, but recommended. Summarize here how the App works "under the hood", so that Users and developers can get a quick idea of the methods, dependencies and assumptions without having to read the code. Keep it short (a few sentences or bullet points) and mention only what is not already obvious from the sections above.*
-
-*Suggested points to cover:*
-
-- *The main library/package(s) the core calculation relies on, ideally naming the central function(s) (e.g. `move2`, `sf`, `amt`, `ctmm`, `lme4`).*
-- *The method or algorithm applied, and the reference/publication it is based on, if any.*
-- *Assumptions made in the code (e.g. the locations are assumed to be independent).*
-- *The level at which the data are processed (e.g. per track/individual, per track and year, on the whole data set at once).*
-- *Anything relevant for performance (e.g. runtime or memory increases strongly with the number of locations, parallelization).*
-- *Known simplifications or limitations of the implementation.*
-
+- **Ground elevation:** `elevatr::get_elev_point()` with `src = "aws"` and zoom level `z = 5` (Amazon Web Services Terrain Tiles). One elevation grid is downloaded for the area of all locations, once when the App is opened, and each location gets the value of the grid cell it falls in. At zoom level 5 the cells are about 3–5 km wide (about 4.9 km at the equator), so the value can differ considerably from the actual ground elevation at the location, especially in hilly or mountainous terrain. Finer zoom levels are not used, because the grid would become too large for study areas spanning continents. This step needs internet access.
+- **Geoid height:** the EGM2008 geoid undulation N from the 1 arc-minute grid `us_nga_egm2008_1.tif` (provided with the App), extracted with `terra::extract()`.
+- **Height above ground:** height above mean sea level: `h − ground.elevation`; height above ellipsoid: `h − egm08.geoid − ground.elevation`; height above ground level: `h` (copied). Earlier versions of this App added the geoid height instead of subtracting it for heights above ellipsoid, which shifted the results by twice the geoid height: too high where the geoid height is positive (e.g. by about 90–100 m in Central Europe) and too low where it is negative (e.g. by about 200 m in parts of the Indian Ocean).
+- **Finding height columns:** standard Movebank height columns, plus columns whose name contains e.g. `height`, `altitude`, `alt`, `elev`, `hae`, `msl`, `asl` or `agl` (not names with `error`, `accuracy`, `dop`, `precision` or `speed`). The same result is used for the selection, the grey list of columns that cannot be converted and `height_columns_overview.csv`.
+- **Suggested height type (heuristic):** locations with a speed below 1.5 m/s (`move2::mt_speed()`, at least 30 locations) are assumed to be close to the ground, and the height type whose median height above ground at these locations is closest to 0 m is suggested. Slow movement does not necessarily mean that the animal is on the ground (e.g. perching in trees or on buildings, soaring or hovering), so the suggestion is only a rough indication. If the values give no clear answer, a hint in the column name (e.g. `msl`, `hae`, `agl`) is used. The suggestion is marked as uncertain if the medians of the height types differ by less than 20 m, or if the geoid height is close to 0 m, where heights above mean sea level and above ellipsoid look alike.
+- **Histogram:** all heights below 0 m in one orange bar left of 0 (no negative values on the axis); heights from 0 m upwards in about 20 equal bars. The bar heights are densities, so the area of a bar is the share of locations in it. The share of locations with a ground elevation below 0 m (probably over the sea) is drawn in red inside the bars; this is only an indication, because land below sea level (e.g. the Netherlands, the Dead Sea) also has negative elevations. If the highest 1 % of the values stretch the axis more than twice as far as the other 99 %, they are included in the rightmost bar, so that single outliers (e.g. GPS errors) do not squeeze the plot. This adjustment affects only the visualization. No locations are excluded, and the original height values remain unchanged for all statistical calculations and threshold proportions.
+- **Time-weighted statistics:** each location is weighted by the time until the next location of the same track (`move2::mt_time_lags()`, seconds). Long gaps, e.g. at night, are attributed completely to the last location before the gap.
+- **Processing level:** statistics and proportions are calculated per track and for all tracks together. Elevation, geoid height and speed are looked up on a copy of the locations in geographic coordinates (EPSG:4326).
+- **Packages:** `shiny`, `move2`, `sf`, `ggplot2`, `elevatr`, `terra`, `shinycssloaders`, `zip`.

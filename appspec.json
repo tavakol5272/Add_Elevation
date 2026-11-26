@@ -35,13 +35,15 @@
       }
     ]
   },
-  "createsArtifacts": true,
   "license": {
     "key": "MIT"
   },
   "language": "eng",
   "keywords": [
     "shiny",
+    "height",
+    "altitude",
+    "elevation",
     "ground elevation",
     "DEM",
     "Digital Elevation Model",

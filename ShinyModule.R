@@ -28,7 +28,10 @@ ignored_height_cols <- c(
 norm_name <- function(x) gsub("_+", "_", gsub("[^a-z0-9]+", "_", tolower(x)))
 
 # convert numbers, units and number-like text to plain numeric
-to_num <- function(x) suppressWarnings(as.numeric(if (is.factor(x)) as.character(x) else x))
+to_num <- function(x) {
+  if (is.list(x)) return(rep(NA_real_, length(x)))   # list columns (e.g. Argos locations) have no single values
+  suppressWarnings(as.numeric(if (is.factor(x)) as.character(x) else x))
+}
 
 has_numeric_values <- function(x) any(is.finite(to_num(x)))
 

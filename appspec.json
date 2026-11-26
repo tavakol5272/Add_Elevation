@@ -82,8 +82,8 @@
     {
       "id": "height_props",
       "name": "Height thresholds for proportional use",
-      "description": "Optional. Heights above ground in metres for which the proportion of locations and of time below each height is calculated, separated by commas. Example: 100,200,300,500. If left empty, no proportions are calculated and the histograms use 50 regular bins.",
-      "defaultValue": null,
+      "description": "Heights above ground in metres for which the proportion of locations and of time below each height is calculated, separated by commas. They are also shown as dashed lines in the histograms. They do not change the calculated heights above ground. If left empty, no proportions are calculated.",
+      "defaultValue": "100,200,300,400,500",
       "type": "STRING"
     }
   ],
@@ -112,12 +112,14 @@
       }
     ]
   },
-  "createsArtifacts": true,
   "license": {
     "key": "MIT"
   },
   "language": "eng",
   "keywords": [
+    "height",
+    "altitude",
+    "elevation",
     "ground elevation",
     "DEM",
     "Digital Elevation Model",

@@ -3,6 +3,7 @@
 #Template test data: input2 has height_above_ellipsoid (with values), input3 has argos_altitude,
 #input4 has height_above_ellipsoid (only NA) and height_raw (text). Set SOURCE_FILE in .env accordingly.
 #Every run writes height_columns_overview.csv if possible height columns exist.
+#"height_props": null means no threshold proportions; the default of the App is "100,200,300,400,500".
 
 
 ########## Option 1: standard Movebank attribute from the list ##########
@@ -28,7 +29,8 @@
 }
 
 #Standard ellipsoid height (use input2)
-#Expected: egm08.geoid added; height_above_ellipsoid.adapted = height - egm08.geoid - ground.elevation
+#Expected: egm08.geoid added; height_above_ellipsoid.adapted = height - egm08.geoid - ground.elevation;
+#histograms PDF: all heights below 0 m in one orange bar left of 0, with a note under each plot
 {
   "height_selection": "select_height_attr_list",
   "height_attr_list": "height_above_ellipsoid",
@@ -111,7 +113,8 @@
 }
 
 #Standard Movebank name typed with a WRONG type (use input2)
-#Expected: adapted as msl, but warning "The values look more like type 'ellipsoid' than 'msl'"
+#Expected: adapted as msl (the App does not check the type of standard Movebank names, because it is
+#known; select the correct type)
 {
   "height_selection": "type_height_attr_name",
   "height_attr_list": "no_selection",
@@ -150,6 +153,17 @@
   "height_props": null
 }
 
+#Column that is not detected as a height column (use input2; eobs_temperature is not a height, only a test)
+#Expected: eobs_temperature.adapted is calculated; extra row in the overview "Not detected as a height
+#column; adapted because it was typed (option 2)", without a suggested height type
+{
+  "height_selection": "type_height_attr_name",
+  "height_attr_list": "no_selection",
+  "height_attr_freetext": "eobs_temperature",
+  "height_type_freetext": "ground_level",
+  "height_props": null
+}
+
 
 ########## Option 3: all standard Movebank height attributes ##########
 
@@ -177,14 +191,15 @@
 
 ########## Thresholds ##########
 
-#Test threshold proportions
-#Expected: additional file <column>.adapted_threshold_proportions.csv; histogram breaks at min, 0, thresholds, max
+#Test threshold proportions (the default thresholds of the App)
+#Expected: additional file <column>.adapted_threshold_proportions.csv; dashed lines at the thresholds
+#in the histograms; the heights above ground are the same as without thresholds
 {
   "height_selection": "select_height_attr_list",
   "height_attr_list": "height_above_ellipsoid",
   "height_attr_freetext": null,
   "height_type_freetext": "unknown",
-  "height_props": "100,200,300,500"
+  "height_props": "100,200,300,400,500"
 }
 
 #Invalid threshold entries
